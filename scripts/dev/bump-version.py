@@ -69,6 +69,7 @@ def bump(repo_root: Path, version: str) -> list[str]:
         (plugin / ".codex-plugin" / "plugin.json", render_json_version),
         (plugin / ".claude-plugin" / "plugin.json", render_json_version),
         (plugin / "third-party" / "tools.lock.json", render_tools_lock_version),
+        (plugin / "package.json", render_json_version),
     ]
 
     pending = []
@@ -82,7 +83,9 @@ def bump(repo_root: Path, version: str) -> list[str]:
             pending.append((path, updated))
 
     for path, updated in pending:
-        path.write_text(updated, encoding="utf-8")
+        # Контрактные места хранятся с LF; запись без перевода строк держала бы
+        # их байты зависимыми от ОС, на которой случился бамп.
+        path.write_text(updated, encoding="utf-8", newline="\n")
     return [path.relative_to(repo_root).as_posix() for path, _ in pending]
 
 

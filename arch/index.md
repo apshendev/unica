@@ -5,6 +5,7 @@
 | Символ | Вид | Статус | Построено | Суть | Файл |
 | --- | --- | --- | --- | --- | --- |
 | `CTR.FORMAT.PLATFORM-XML-8-3-27` | контракт · product | active |  | Чтение ресурсов сохраняет байты корпуса Platform XML 8.3.27 | [contracts/CTR.FORMAT.PLATFORM-XML-8-3-27.md](contracts/CTR.FORMAT.PLATFORM-XML-8-3-27.md) |
+| `CTR.HOST.OPENCODE-CONFIG` | контракт · product | active |  | Конфигурация OpenCode получает упакованные скиллы и владельца mcp.unica | [contracts/CTR.HOST.OPENCODE-CONFIG.md](contracts/CTR.HOST.OPENCODE-CONFIG.md) |
 | `CTR.PKG.CORE-PROVENANCE-SELECTABLE` | контракт · product | active |  | Происхождение ядра выбирается сборкой с одним умолчанием | [contracts/CTR.PKG.CORE-PROVENANCE-SELECTABLE.md](contracts/CTR.PKG.CORE-PROVENANCE-SELECTABLE.md) |
 | `CTR.WIRE.LIST-CACHE-FIELDS` | контракт · product | active |  | Современный list несёт cache-поля, legacy сохраняет прежнюю форму | [contracts/CTR.WIRE.LIST-CACHE-FIELDS.md](contracts/CTR.WIRE.LIST-CACHE-FIELDS.md) |
 | `CTR.WIRE.TOOL-SURFACE` | контракт · product | active |  | Ведомость поверхности порождается из бинаря | [contracts/CTR.WIRE.TOOL-SURFACE.md](contracts/CTR.WIRE.TOOL-SURFACE.md) |
@@ -41,6 +42,7 @@
 | `DEC.2026-08-22.EVIDENCE-BOUNDED-SAFETY` | решение · product | active | да | Safety-правило не шире исполняемого доказательства | [decisions/2026-08-22-evidence-bounded-safety.md](decisions/2026-08-22-evidence-bounded-safety.md) |
 | `DEC.2026-08-22.LINEAR-PUBLICATION` | решение · product | active | да | Публикация выражается зависимостями одного конвейера | [decisions/2026-08-22-linear-publication.md](decisions/2026-08-22-linear-publication.md) |
 | `DEC.2026-08-24.CORE-PROVENANCE-NAMED-BY-BUILD` | решение · product | active | да | Происхождение ядра называет сборка | [decisions/2026-08-24-core-provenance-named-by-build.md](decisions/2026-08-24-core-provenance-named-by-build.md) |
+| `DEC.2026-08-24.OPENCODE-ADAPTER-DELIVERY` | решение · product | active | да | OpenCode — хост-адаптер с npm-адресом доставки | [decisions/2026-08-24-opencode-adapter-delivery.md](decisions/2026-08-24-opencode-adapter-delivery.md) |
 | `INV.APP.CODE-DEFINITION-READINESS` | инвариант · product | active |  | Definition не публикует ложный типизированный успех | [invariants/INV.APP.CODE-DEFINITION-READINESS.md](invariants/INV.APP.CODE-DEFINITION-READINESS.md) |
 | `INV.APP.CONFIG-SNAPSHOT` | инвариант · product | active |  | Оверлей конфигурации не меняет исходный снимок | [invariants/INV.APP.CONFIG-SNAPSHOT.md](invariants/INV.APP.CONFIG-SNAPSHOT.md) |
 | `INV.APP.DEFERRED-MANIFEST` | инвариант · product | active |  | Большое чтение отвечает ограниченным манифестом | [invariants/INV.APP.DEFERRED-MANIFEST.md](invariants/INV.APP.DEFERRED-MANIFEST.md) |
@@ -103,6 +105,8 @@
 | `INV.DOC.RECORD-SHAPE` | инвариант · process | active |  | Запись несёт обязательные поля своего вида | [invariants/INV.DOC.RECORD-SHAPE.md](invariants/INV.DOC.RECORD-SHAPE.md) |
 | `INV.DOC.SUPERPOWERS-BOUNDARY` | инвариант · process | active |  | Формы superpowers не входят в реестр | [invariants/INV.DOC.SUPERPOWERS-BOUNDARY.md](invariants/INV.DOC.SUPERPOWERS-BOUNDARY.md) |
 | `INV.HOST.KNOWLEDGE-BEHIND-FACADE` | инвариант · process | active |  | Знание о хосте живёт за host-фасадом | [invariants/INV.HOST.KNOWLEDGE-BEHIND-FACADE.md](invariants/INV.HOST.KNOWLEDGE-BEHIND-FACADE.md) |
+| `INV.HOST.OPENCODE-PLATFORM-GATE` | инвариант · product | active |  | OpenCode-адаптер выбирает только поддерживаемые цели | [invariants/INV.HOST.OPENCODE-PLATFORM-GATE.md](invariants/INV.HOST.OPENCODE-PLATFORM-GATE.md) |
+| `INV.HOST.OPENCODE-SHARED-SURFACE` | инвариант · product | active |  | Адаптер OpenCode разделяет поверхность продукта | [invariants/INV.HOST.OPENCODE-SHARED-SURFACE.md](invariants/INV.HOST.OPENCODE-SHARED-SURFACE.md) |
 | `INV.MAINT.DONOR-PARITY` | инвариант · process | active |  | Донорские сценарии сравниваются с настоящими MCP-вызовами | [invariants/INV.MAINT.DONOR-PARITY.md](invariants/INV.MAINT.DONOR-PARITY.md) |
 | `INV.MAINT.DONOR-SNAPSHOT-INTEGRITY` | инвариант · process | active |  | Донорский снимок связан с проверенным происхождением | [invariants/INV.MAINT.DONOR-SNAPSHOT-INTEGRITY.md](invariants/INV.MAINT.DONOR-SNAPSHOT-INTEGRITY.md) |
 | `INV.OBS.DETACHED-JOB-STATE` | инвариант · product | active |  | Отделённый worker ведёт долговременное состояние задания | [invariants/INV.OBS.DETACHED-JOB-STATE.md](invariants/INV.OBS.DETACHED-JOB-STATE.md) |
@@ -133,6 +137,7 @@
 | `INV.PKG.HOST-MANIFEST-LOCKSTEP` | инвариант · product | active |  | Один каталог плагина несёт согласованные host-манифесты | [invariants/INV.PKG.HOST-MANIFEST-LOCKSTEP.md](invariants/INV.PKG.HOST-MANIFEST-LOCKSTEP.md) |
 | `INV.PKG.HOST-SHARED-MCP` | инвариант · product | active |  | Оба хоста запускают MCP из одного каталога плагина | [invariants/INV.PKG.HOST-SHARED-MCP.md](invariants/INV.PKG.HOST-SHARED-MCP.md) |
 | `INV.PKG.INSTALL-TOOL-CLOSURE` | инвариант · product | active |  | Неполный runtime не помечается готовым | [invariants/INV.PKG.INSTALL-TOOL-CLOSURE.md](invariants/INV.PKG.INSTALL-TOOL-CLOSURE.md) |
+| `INV.PKG.NPM-CANDIDATE-FROM-THIN-ROOT` | инвариант · product | active |  | npm-кандидат собирается из тонкого корня | [invariants/INV.PKG.NPM-CANDIDATE-FROM-THIN-ROOT.md](invariants/INV.PKG.NPM-CANDIDATE-FROM-THIN-ROOT.md) |
 | `INV.PKG.OLDEST-CLIENT-KEYS` | инвариант · product | active |  | Claude-контракты не используют новые необязательные ключи | [invariants/INV.PKG.OLDEST-CLIENT-KEYS.md](invariants/INV.PKG.OLDEST-CLIENT-KEYS.md) |
 | `INV.PKG.OLDEST-CLIENT-LOAD` | инвариант · product | active |  | Пакет проверяется нижней поддерживаемой версией клиента | [invariants/INV.PKG.OLDEST-CLIENT-LOAD.md](invariants/INV.PKG.OLDEST-CLIENT-LOAD.md) |
 | `INV.PKG.PACKAGED-PUBLIC-SURFACE` | инвариант · product | active |  | Bootstrap проверяет два MCP lifecycle и три опорных инструмента | [invariants/INV.PKG.PACKAGED-PUBLIC-SURFACE.md](invariants/INV.PKG.PACKAGED-PUBLIC-SURFACE.md) |

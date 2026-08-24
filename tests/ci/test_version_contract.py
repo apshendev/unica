@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -55,15 +56,24 @@ class VersionContractTests(unittest.TestCase):
 
         values = module.read_version_contract(REPO_ROOT)
 
-        # Named rather than pinned to a literal: the contract is that the four
-        # locations agree, and asserting the number here only added a file every
+        # Named rather than pinned to a literal: the contract is that every
+        # location agrees, and asserting the number here only added a file every
         # release had to come back and edit.
         self.assertEqual(
             sorted(values),
-            ["claude-plugin", "plugin", "tools-lock-unica", "workspace"],
+            ["claude-plugin", "npm-package", "plugin", "tools-lock-unica", "workspace"],
         )
         self.assertEqual(len(set(values.values())), 1, values)
         self.assertRegex(next(iter(values.values())), load_module().RELEASE_VERSION)
+
+    def test_the_npm_package_declares_the_lockstep_version(self) -> None:
+        values = load_module().read_version_contract(REPO_ROOT)
+
+        package_json = json.loads(
+            (REPO_ROOT / "plugins/unica/package.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(package_json["name"], "@apshendev/unica-opencode")
+        self.assertEqual(values["npm-package"], package_json["version"])
 
     def test_meta_surface_delivery_is_versioned_across_the_012_line(self) -> None:
         module = load_module()
@@ -227,6 +237,72 @@ class PrereleaseVersionTests(unittest.TestCase):
         semver = self.bumper().SEMVER
         for version in ("0.13", "v0.13.0", "0.13.0-", "0.13.0 rc1", "next"):
             self.assertIsNone(semver.fullmatch(version), version)
+
+
+class VersionBumpContractTests(unittest.TestCase):
+    """Бампер — одна операция по всем контрактным местам, включая npm-пакет."""
+
+    def bumper(self):
+        import importlib.util
+
+        path = REPO_ROOT / "scripts" / "dev" / "bump-version.py"
+        spec = importlib.util.spec_from_file_location("bump_version_contract", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def make_repo(self, root: Path, *, broken: str | None = None) -> None:
+        (root / "Cargo.toml").write_text(
+            '[workspace.package]\nversion = "0.12.0"\n', encoding="utf-8"
+        )
+        plugin = root / "plugins" / "unica"
+        for host in (".codex-plugin", ".claude-plugin"):
+            (plugin / host).mkdir(parents=True, exist_ok=True)
+            (plugin / host / "plugin.json").write_text(
+                json.dumps({"name": "unica", "version": "0.12.0"}), encoding="utf-8"
+            )
+        (plugin / "third-party").mkdir(parents=True, exist_ok=True)
+        (plugin / "third-party" / "tools.lock.json").write_text(
+            json.dumps({"tools": [{"name": "unica", "version": "0.12.0"}]}),
+            encoding="utf-8",
+        )
+        (plugin / "package.json").write_text(
+            json.dumps(
+                {"name": "@apshendev/unica-opencode", "version": "0.12.0"}, indent=2
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        if broken is not None:
+            (plugin / broken).write_text("{ not json", encoding="utf-8")
+
+    def test_bump_updates_the_npm_package_version_too(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_repo(root)
+
+            changed = self.bumper().bump(root, "0.13.0")
+
+            package = json.loads(
+                (root / "plugins/unica/package.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(package["version"], "0.13.0")
+            self.assertIn("plugins/unica/package.json", changed)
+
+    def test_a_render_failure_leaves_every_contract_file_untouched(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_repo(root, broken="package.json")
+
+            with self.assertRaises((json.JSONDecodeError, SystemExit)):
+                self.bumper().bump(root, "0.13.0")
+
+            manifest = json.loads(
+                (root / "plugins/unica/.codex-plugin/plugin.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(manifest["version"], "0.12.0")
 
 
 if __name__ == "__main__":

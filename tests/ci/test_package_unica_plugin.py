@@ -1301,6 +1301,24 @@ class PackageUnicaPluginTests(unittest.TestCase):
                 "cc-1c-skills", (plugin / "ATTRIBUTIONS.md").read_text(encoding="utf-8")
             )
 
+    def test_marketplace_packages_stay_free_of_opencode_npm_metadata(self) -> None:
+        module = load_package_module()
+        repo_root = Path(__file__).resolve().parents[2]
+        plugin_src = repo_root / "plugins" / "unica"
+        # The source root genuinely carries the npm metadata for the OpenCode
+        # delivery address; the host marketplace packages must not ship it.
+        self.assertTrue((plugin_src / "package.json").is_file())
+        self.assertTrue((plugin_src / "opencode" / "index.js").is_file())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dst = Path(tmp) / "plugin"
+
+            module.copy_tracked_plugin_source(repo_root, plugin_src, dst)
+
+            self.assertFalse((dst / "package.json").exists())
+            self.assertFalse((dst / "opencode").exists())
+            self.assertFalse((dst / "node_modules").exists())
+
     def test_core_release_repository_override_names_the_fork_as_owner(self) -> None:
         module = load_package_module()
         repo_root = Path(__file__).resolve().parents[2]

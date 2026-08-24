@@ -1,0 +1,25 @@
+{
+  "name": "@apshendev/unica-opencode",
+  "version": "0.12.0",
+  "description": "Unica 1C:Enterprise development workflows for OpenCode: the packaged skill set and the single public unica MCP server.",
+  "author": "apshendev",
+  "license": "LGPL-3.0-or-later",
+  "homepage": "https://github.com/apshendev/unica#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/apshendev/unica.git",
+    "directory": "plugins/unica"
+  },
+  "keywords": [
+    "1c",
+    "1c-enterprise",
+    "bsl",
+    "mcp",
+    "opencode",
+    "ai",
+    "agent"
+  ],
+  "type": "module",
+  "main": "./opencode/index.js",
+  "exports": "./opencode/index.js"
+}

@@ -30,6 +30,14 @@ DISPLAY_NAME = "Unica"
 HOST_MANIFEST_DIRS = {"codex": ".codex-plugin", "claude": ".claude-plugin"}
 CLAUDE_MARKETPLACE_PATH = Path(".claude-plugin") / "marketplace.json"
 SOURCE_PACKAGE_IGNORES = {"bin", ".DS_Store", "__pycache__", ".pytest_cache"}
+# npm-доставка OpenCode живёт в том же исходном корне плагина, но в host-пакеты
+# не попадает: Codex и Claude Code читают свои манифесты, а не npm-метаданные.
+OPENCODE_PACKAGE_SOURCES = {
+    "package.json",
+    "package-lock.json",
+    "opencode",
+    "node_modules",
+}
 DISALLOWED_ARCHIVE_PARTS = {".build", "dist", "__pycache__", ".pytest_cache"}
 SUPPORTED_TARGETS = {
     "darwin-arm64": ("aarch64-apple-darwin", "unica-bootstrap"),
@@ -89,6 +97,8 @@ def copy_tracked_plugin_source(repo_root: Path, plugin_src: Path, dst: Path) -> 
 
     for rel in git_tracked_plugin_files(repo_root, plugin_src):
         rel_path = Path(rel)
+        if rel_path.parts[0] in OPENCODE_PACKAGE_SOURCES:
+            continue
         validate_tracked_plugin_source_path(rel_path)
         source = plugin_src / rel_path
         if source.is_symlink():

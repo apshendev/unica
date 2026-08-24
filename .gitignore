@@ -12,6 +12,8 @@ __pycache__/
 *.pyo
 *.spec
 plugins/unica/bin/darwin-arm64/
+plugins/unica/node_modules/
+plugins/unica/package-lock.json
 plugins/unica/bin/linux-x64/
 plugins/unica/bin/win-x64/
 # Машинная политика сетевого выхода документации (ADR-0032): не коммитится
