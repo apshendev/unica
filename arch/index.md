@@ -43,6 +43,7 @@
 | `DEC.2026-08-22.LINEAR-PUBLICATION` | решение · product | active | да | Публикация выражается зависимостями одного конвейера | [decisions/2026-08-22-linear-publication.md](decisions/2026-08-22-linear-publication.md) |
 | `DEC.2026-08-24.CORE-PROVENANCE-NAMED-BY-BUILD` | решение · product | active | да | Происхождение ядра называет сборка | [decisions/2026-08-24-core-provenance-named-by-build.md](decisions/2026-08-24-core-provenance-named-by-build.md) |
 | `DEC.2026-08-24.OPENCODE-ADAPTER-DELIVERY` | решение · product | active | да | OpenCode — хост-адаптер с npm-адресом доставки | [decisions/2026-08-24-opencode-adapter-delivery.md](decisions/2026-08-24-opencode-adapter-delivery.md) |
+| `DEC.2026-08-25.NPM-TRUSTED-PUBLICATION` | решение · product | active | да | npm-выпуск OpenCode-кандидата — trusted publishing за гейтом форка | [decisions/2026-08-25-npm-trusted-publication.md](decisions/2026-08-25-npm-trusted-publication.md) |
 | `INV.APP.CODE-DEFINITION-READINESS` | инвариант · product | active |  | Definition не публикует ложный типизированный успех | [invariants/INV.APP.CODE-DEFINITION-READINESS.md](invariants/INV.APP.CODE-DEFINITION-READINESS.md) |
 | `INV.APP.CONFIG-SNAPSHOT` | инвариант · product | active |  | Оверлей конфигурации не меняет исходный снимок | [invariants/INV.APP.CONFIG-SNAPSHOT.md](invariants/INV.APP.CONFIG-SNAPSHOT.md) |
 | `INV.APP.DEFERRED-MANIFEST` | инвариант · product | active |  | Большое чтение отвечает ограниченным манифестом | [invariants/INV.APP.DEFERRED-MANIFEST.md](invariants/INV.APP.DEFERRED-MANIFEST.md) |
@@ -138,6 +139,8 @@
 | `INV.PKG.HOST-SHARED-MCP` | инвариант · product | active |  | Оба хоста запускают MCP из одного каталога плагина | [invariants/INV.PKG.HOST-SHARED-MCP.md](invariants/INV.PKG.HOST-SHARED-MCP.md) |
 | `INV.PKG.INSTALL-TOOL-CLOSURE` | инвариант · product | active |  | Неполный runtime не помечается готовым | [invariants/INV.PKG.INSTALL-TOOL-CLOSURE.md](invariants/INV.PKG.INSTALL-TOOL-CLOSURE.md) |
 | `INV.PKG.NPM-CANDIDATE-FROM-THIN-ROOT` | инвариант · product | active |  | npm-кандидат собирается из тонкого корня | [invariants/INV.PKG.NPM-CANDIDATE-FROM-THIN-ROOT.md](invariants/INV.PKG.NPM-CANDIDATE-FROM-THIN-ROOT.md) |
+| `INV.PKG.NPM-PUBLICATION-GATE` | инвариант · product | active |  | npm-выпуск идёт только из тегового пуша форка через OIDC | [invariants/INV.PKG.NPM-PUBLICATION-GATE.md](invariants/INV.PKG.NPM-PUBLICATION-GATE.md) |
+| `INV.PKG.NPM-RERUN-INTEGRITY` | инвариант · product | active |  | Повторная npm-публикация успешна только при побайтовом совпадении | [invariants/INV.PKG.NPM-RERUN-INTEGRITY.md](invariants/INV.PKG.NPM-RERUN-INTEGRITY.md) |
 | `INV.PKG.OLDEST-CLIENT-KEYS` | инвариант · product | active |  | Claude-контракты не используют новые необязательные ключи | [invariants/INV.PKG.OLDEST-CLIENT-KEYS.md](invariants/INV.PKG.OLDEST-CLIENT-KEYS.md) |
 | `INV.PKG.OLDEST-CLIENT-LOAD` | инвариант · product | active |  | Пакет проверяется нижней поддерживаемой версией клиента | [invariants/INV.PKG.OLDEST-CLIENT-LOAD.md](invariants/INV.PKG.OLDEST-CLIENT-LOAD.md) |
 | `INV.PKG.PACKAGED-PUBLIC-SURFACE` | инвариант · product | active |  | Bootstrap проверяет два MCP lifecycle и три опорных инструмента | [invariants/INV.PKG.PACKAGED-PUBLIC-SURFACE.md](invariants/INV.PKG.PACKAGED-PUBLIC-SURFACE.md) |

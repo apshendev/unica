@@ -696,6 +696,50 @@ jobs:
           python scripts/ci/verify-delivery-reachable.py
           --plugin-root .build/thin/plugins/unica
 
+  publish-opencode-npm:
+    name: Publish OpenCode npm candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [package-thin, verify-published-assets]
+    if: >-
+      ${{
+        always() &&
+        needs.package-thin.result == 'success' &&
+        needs.verify-published-assets.result == 'success' &&
+        github.event_name == 'push' &&
+        startsWith(github.ref, 'refs/tags/') &&
+        github.repository == 'apshendev/unica'
+      }}
+    permissions:
+      # npm trusted publishing: короткоживущий OIDC-токен вместо npm-токена.
+      # Долгоживущий токен не появляется ни в secrets, ни в окружении.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # npm >= 11.5 умеет токенленную публикацию из OIDC; node 24 несёт её.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v8
+        with:
+          name: unica-thin-marketplace
+          path: .build/thin
+      - name: Assemble the OpenCode npm candidate
+        run: >
+          python scripts/ci/package-unica-opencode.py
+          --repo-root .
+          --thin-root .build/thin/plugins/unica
+          --out-dir dist/npm
+      - name: Publish through npm trusted publishing
+        run: >
+          python scripts/ci/publish-unica-opencode.py
+          --repo-root .
+          --npm-root dist/npm
+
   unica-ci:
     name: Unica CI
     runs-on: ubuntu-latest
@@ -714,6 +758,7 @@ jobs:
       - publish-release-assets
       - smoke-thin-plugin
       - verify-published-assets
+      - publish-opencode-npm
     steps:
       - uses: actions/checkout@v7
       - name: Evaluate required CI results

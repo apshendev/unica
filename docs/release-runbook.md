@@ -22,6 +22,46 @@ that same input — a manifest naming one owner never validates against a
 bootstrap built for another (`CTR.PKG.CORE-PROVENANCE-SELECTABLE`). Engine
 deliveries stay pinned to the toolchain repository regardless.
 
+## OpenCode npm publication
+
+Tagged releases of this fork also publish the OpenCode candidate
+`@apshendev/unica-opencode` to npm. The `publish-opencode-npm` job runs after
+the runtime assets are published **and** re-verified, only on a tag push, and
+only when `github.repository == 'apshendev/unica'` — the same workflow file on
+upstream skips the job, and the aggregate gate expects it skipped there.
+Authentication is npm trusted publishing: the job carries
+`permissions: id-token: write` and npm (>= 11.5, from the Node 24 runner)
+exchanges the short-lived OIDC token for the publish. No long-lived npm token
+exists in this repository, and `publish-unica-opencode.py` re-checks the
+repository, event, ref, and package identity before invoking npm
+(`INV.PKG.NPM-PUBLICATION-GATE`).
+
+One-time prerequisites, done by the package owner:
+
+1. **Claim the package.** Trusted publishers are configured in an existing
+   package's settings, so the name must be claimed first: publish the tagged
+   candidate once manually (`npm publish <tarball> --access public`, logged
+   in with 2FA — no CI token needed), or `npm org`/UI equivalent for your
+   account. This one publish predates trusted publishing; every later
+   version goes through the workflow.
+2. **Link the trusted publisher.** In the package settings on npmjs.com add
+   a trusted publisher for the GitHub repository `apshendev/unica` with the
+   workflow filename `unica-plugin-release.yml` (no directory prefix) and no
+   environment. From that moment the workflow's OIDC token is the only
+   credential that can publish.
+
+Until step 2 exists, a tagged release fails its npm job with an
+authorization error and nothing is published.
+
+A rerun of a release whose npm version already exists succeeds only when the
+registry tarball is byte-identical to the candidate (`npm view dist.tarball`,
+download, SHA-512 compare; `INV.PKG.NPM-RERUN-INTEGRITY`). SemVer prereleases
+publish under the `next` dist-tag so `latest` never serves one, mirroring the
+GitHub prerelease marking. Any other outcome — an integrity mismatch or an
+npm failure — leaves the workflow red; the tag and the runtime assets are
+never deleted or rewritten by this pipeline. The upstream Codex and Claude
+Code marketplace promotion is a separate workflow this one does not touch.
+
 ## Why publication has two phases
 
 The catalog must never point at bytes that are not final. If it moved in the

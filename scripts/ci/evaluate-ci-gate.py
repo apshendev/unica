@@ -36,6 +36,10 @@ PUBLISH_JOBS = (
     "smoke-thin-plugin",
     "verify-published-assets",
 )
+# npm-выпуск OpenCode-кандидата принадлежит только форку: тот же файл
+# workflow на upstream обязан пропускать эту работу, а не падать.
+FORK_REPOSITORY = "apshendev/unica"
+NPM_PUBLISH_JOB = "publish-opencode-npm"
 
 
 class GateEvaluation(NamedTuple):
@@ -87,6 +91,7 @@ def expected_results(
     event_name: str,
     ref: str,
     classification: Mapping[str, str],
+    repository: str = "",
 ) -> tuple[str, dict[str, str], dict[str, tuple[str, str]]]:
     expected = {job: "success" for job in ALWAYS_JOBS}
     invalid: dict[str, tuple[str, str]] = {}
@@ -125,6 +130,9 @@ def expected_results(
         "success" if package_pipeline and (is_pr or is_manual) else "skipped"
     )
     expected.update({job: "success" if is_tag else "skipped" for job in PUBLISH_JOBS})
+    expected[NPM_PUBLISH_JOB] = (
+        "success" if is_tag and repository == FORK_REPOSITORY else "skipped"
+    )
 
     if is_tag:
         contour = "release"
@@ -153,8 +161,11 @@ def evaluate_gate(
     ref: str,
     classification: Mapping[str, str],
     results: Mapping[str, str],
+    repository: str = "",
 ) -> GateEvaluation:
-    contour, expected, unexpected = expected_results(event_name, ref, classification)
+    contour, expected, unexpected = expected_results(
+        event_name, ref, classification, repository
+    )
     unexpected = dict(unexpected)
 
     for job, expected_result in expected.items():
@@ -235,6 +246,7 @@ def main() -> int:
         os.environ.get("GITHUB_REF", ""),
         classification,
         results,
+        repository=os.environ.get("GITHUB_REPOSITORY", ""),
     )
     summary = render_summary(evaluation)
     print(summary, end="")

@@ -38,6 +38,7 @@ PUBLISH_SKIPPED = {
     "publish-release-assets": "skipped",
     "smoke-thin-plugin": "skipped",
     "verify-published-assets": "skipped",
+    "publish-opencode-npm": "skipped",
 }
 
 
@@ -185,15 +186,48 @@ class EvaluateCiGateTests(unittest.TestCase):
             "publish-release-assets": "success",
             "smoke-thin-plugin": "success",
             "verify-published-assets": "success",
+            "publish-opencode-npm": "success",
         }
 
         manual_evaluation = module.evaluate_gate("workflow_dispatch", "refs/heads/main", outputs, manual)
-        tag_evaluation = module.evaluate_gate("push", "refs/tags/v0.9.1", outputs, tag)
+        tag_evaluation = module.evaluate_gate(
+            "push", "refs/tags/v0.9.1", outputs, tag, repository="apshendev/unica"
+        )
 
         self.assertTrue(manual_evaluation.ok)
         self.assertEqual("full", manual_evaluation.contour)
         self.assertTrue(tag_evaluation.ok)
         self.assertEqual("release", tag_evaluation.contour)
+
+    def test_the_fork_expects_npm_publication_and_upstream_skips_it(self) -> None:
+        module = load_gate_module()
+        outputs = classification(**{name: True for name in OUTPUT_NAMES})
+        upstream_results = {
+            **source_results(),
+            "test-rust-platforms": "success",
+            "test-search-integration": "success",
+            **PACKAGE_SUCCESS,
+            **ASSESSMENT_SUCCESS,
+            "publish-release-assets": "success",
+            "smoke-thin-plugin": "success",
+            "verify-published-assets": "success",
+            "publish-opencode-npm": "skipped",
+        }
+        fork_results = {**upstream_results, "publish-opencode-npm": "failure"}
+
+        upstream = module.evaluate_gate(
+            "push", "refs/tags/v0.9.1", outputs, upstream_results,
+            repository="IngvarConsulting/unica",
+        )
+        fork = module.evaluate_gate(
+            "push", "refs/tags/v0.9.1", outputs, fork_results,
+            repository="apshendev/unica",
+        )
+
+        self.assertTrue(upstream.ok)
+        self.assertEqual("skipped", upstream.expected["publish-opencode-npm"])
+        self.assertFalse(fork.ok)
+        self.assertIn("publish-opencode-npm", fork.unexpected)
 
     def test_manual_dispatch_on_tag_ref_remains_non_publishing_full_contour(self) -> None:
         module = load_gate_module()

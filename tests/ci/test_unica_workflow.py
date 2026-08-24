@@ -164,6 +164,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             "publish-release-assets",
             "smoke-thin-plugin",
             "verify-published-assets",
+            "publish-opencode-npm",
         ):
             with self.subTest(upstream=upstream):
                 self.assertIn(f"      - {upstream}", gate)
@@ -365,6 +366,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             "publish-release-assets": 15,
             "smoke-thin-plugin": 30,
             "verify-published-assets": 15,
+            "publish-opencode-npm": 15,
             "unica-ci": 5,
         }
         for job_id, minutes in expected_release_timeouts.items():
@@ -624,6 +626,38 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             self.assertIn('"$CORE_RELEASE_REPOSITORY"', block)
             self.assertIn("--core-release-repository", block)
 
+    def test_opencode_npm_publication_is_fork_gated_and_trusted(self) -> None:
+        """npm-выпуск — только теговый пуш форка, после проверенных ассетов.
+
+        Публикация идёт короткоживущим OIDC-токеном trusted publishing:
+        долгоживущий npm-токен в репозитории не появляется
+        (INV.PKG.NPM-PUBLICATION-GATE).
+        """
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        block = job_block(workflow, "publish-opencode-npm")
+
+        self.assertTrue(block, "job publish-opencode-npm not found")
+        self.assertIn("needs: [package-thin, verify-published-assets]", block)
+        self.assertIn("github.event_name == 'push'", block)
+        self.assertIn("startsWith(github.ref, 'refs/tags/')", block)
+        self.assertIn("github.repository == 'apshendev/unica'", block)
+        self.assertIn("needs.package-thin.result == 'success'", block)
+        self.assertIn("needs.verify-published-assets.result == 'success'", block)
+        self.assertIn("id-token: write", block)
+        self.assertIn("package-unica-opencode.py", block)
+        self.assertIn("publish-unica-opencode.py", block)
+        self.assertNotIn("NODE_AUTH_TOKEN", block)
+        self.assertNotIn("secrets.", block)
+        # Литерал владельца одинаков в workflow, скрипте публикации и гейте.
+        publish_script = (
+            REPO_ROOT / "scripts" / "ci" / "publish-unica-opencode.py"
+        ).read_text(encoding="utf-8")
+        gate_script = (
+            REPO_ROOT / "scripts" / "ci" / "evaluate-ci-gate.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('FORK_REPOSITORY = "apshendev/unica"', publish_script)
+        self.assertIn('FORK_REPOSITORY = "apshendev/unica"', gate_script)
+
     def test_publication_is_one_linear_pass_ordered_by_needs(self) -> None:
         """ADR-0068: stage → tag → verify → promote, no pull requests, no warden.
 
@@ -786,6 +820,7 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
             "probe-thin-bootstrap": ("package-thin",),
             "smoke-thin-plugin": ("package-thin", "publish-release-assets"),
             "verify-published-assets": ("publish-release-assets", "package-thin"),
+            "publish-opencode-npm": ("package-thin", "verify-published-assets"),
         }
         for job, needs in expected_needs.items():
             self.assertEqual(jobs[job].needs, needs, job)
