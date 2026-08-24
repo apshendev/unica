@@ -165,6 +165,8 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             "smoke-thin-plugin",
             "verify-published-assets",
             "publish-opencode-npm",
+            "smoke-opencode-windows",
+            "smoke-opencode-linux",
         ):
             with self.subTest(upstream=upstream):
                 self.assertIn(f"      - {upstream}", gate)
@@ -367,6 +369,8 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             "smoke-thin-plugin": 30,
             "verify-published-assets": 15,
             "publish-opencode-npm": 15,
+            "smoke-opencode-windows": 40,
+            "smoke-opencode-linux": 40,
             "unica-ci": 5,
         }
         for job_id, minutes in expected_release_timeouts.items():
@@ -657,6 +661,53 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('FORK_REPOSITORY = "apshendev/unica"', publish_script)
         self.assertIn('FORK_REPOSITORY = "apshendev/unica"', gate_script)
+
+    def test_opencode_consumer_smoke_gates_the_release(self) -> None:
+        """Реальный потребитель пола 1.18.22 проверяет публикацию npm.
+
+        Windows x64 — блокирующий: без него выпуск не зелёный. Linux x64 —
+        best effort: `continue-on-error`, но его падение видно в отчёте.
+        OpenCode-потребителя под macOS нет, а существующие Codex/Claude
+        проверки macOS не тронуты (INV.CI.OPENCODE-CONSUMER-SMOKE).
+        """
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        windows = job_block(workflow, "smoke-opencode-windows")
+        linux = job_block(workflow, "smoke-opencode-linux")
+
+        for job_id, block in (
+            ("smoke-opencode-windows", windows),
+            ("smoke-opencode-linux", linux),
+        ):
+            with self.subTest(job=job_id):
+                self.assertTrue(block, f"job {job_id} not found")
+                self.assertIn("needs: publish-opencode-npm", block)
+                self.assertIn("github.repository == 'apshendev/unica'", block)
+                self.assertIn("npm install -g opencode-ai@1.18.22", block)
+                # Пол, не потолок: потребитель ставит ровно версию пола.
+                self.assertNotIn("opencode-ai@latest", block)
+                self.assertIn('opencode plugin "@apshendev/unica-opencode@', block)
+                self.assertIn("opencode debug skill", block)
+                self.assertIn("opencode mcp list", block)
+                self.assertIn("smoke-opencode-consumer.py", block)
+                # Потребитель изолирован вне checkout: каталог во временном
+                # хранилище раннера, а не в рабочем дереве репозитория.
+                self.assertNotIn(".build/consumer", block)
+                self.assertIn(
+                    "working-directory: ${{ runner.temp }}/opencode-consumer", block
+                )
+                # Верификатор запускается из checkout: относительный путь к
+                # скрипту и корню плагина разрешается, артефакты потребителя
+                # передаются абсолютными путями.
+                self.assertIn(
+                    '"$RUNNER_TEMP/opencode-consumer/skills.json"', block
+                )
+                self.assertIn('"$RUNNER_TEMP/opencode-consumer/mcp.txt"', block)
+
+        self.assertNotIn("continue-on-error", windows)
+        self.assertIn("continue-on-error: true", linux)
+        # Никакого OpenCode-потребителя под macOS.
+        for job_id in ("smoke-opencode-darwin", "smoke-opencode-macos"):
+            self.assertFalse(job_block(workflow, job_id))
 
     def test_publication_is_one_linear_pass_ordered_by_needs(self) -> None:
         """ADR-0068: stage → tag → verify → promote, no pull requests, no warden.

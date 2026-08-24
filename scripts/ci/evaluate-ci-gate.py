@@ -36,10 +36,14 @@ PUBLISH_JOBS = (
     "smoke-thin-plugin",
     "verify-published-assets",
 )
-# npm-выпуск OpenCode-кандидата принадлежит только форку: тот же файл
-# workflow на upstream обязан пропускать эту работу, а не падать.
+# npm-выпуск и OpenCode-потребители принадлежат только форку: тот же файл
+# workflow на upstream обязан пропускать эти работы, а не падать.
 FORK_REPOSITORY = "apshendev/unica"
-NPM_PUBLISH_JOB = "publish-opencode-npm"
+FORK_TAG_ONLY_JOBS = (
+    "publish-opencode-npm",
+    "smoke-opencode-windows",
+    "smoke-opencode-linux",
+)
 
 
 class GateEvaluation(NamedTuple):
@@ -130,8 +134,11 @@ def expected_results(
         "success" if package_pipeline and (is_pr or is_manual) else "skipped"
     )
     expected.update({job: "success" if is_tag else "skipped" for job in PUBLISH_JOBS})
-    expected[NPM_PUBLISH_JOB] = (
-        "success" if is_tag and repository == FORK_REPOSITORY else "skipped"
+    expected.update(
+        {
+            job: "success" if is_tag and repository == FORK_REPOSITORY else "skipped"
+            for job in FORK_TAG_ONLY_JOBS
+        }
     )
 
     if is_tag:

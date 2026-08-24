@@ -44,6 +44,7 @@
 | `DEC.2026-08-24.CORE-PROVENANCE-NAMED-BY-BUILD` | решение · product | active | да | Происхождение ядра называет сборка | [decisions/2026-08-24-core-provenance-named-by-build.md](decisions/2026-08-24-core-provenance-named-by-build.md) |
 | `DEC.2026-08-24.OPENCODE-ADAPTER-DELIVERY` | решение · product | active | да | OpenCode — хост-адаптер с npm-адресом доставки | [decisions/2026-08-24-opencode-adapter-delivery.md](decisions/2026-08-24-opencode-adapter-delivery.md) |
 | `DEC.2026-08-25.NPM-TRUSTED-PUBLICATION` | решение · product | active | да | npm-выпуск OpenCode-кандидата — trusted publishing за гейтом форка | [decisions/2026-08-25-npm-trusted-publication.md](decisions/2026-08-25-npm-trusted-publication.md) |
+| `DEC.2026-08-25.OPENCODE-CONSUMER-SMOKE` | решение · product | active | да | Выпуск гейтится потребителями OpenCode минимальной версии | [decisions/2026-08-25-opencode-consumer-smoke.md](decisions/2026-08-25-opencode-consumer-smoke.md) |
 | `INV.APP.CODE-DEFINITION-READINESS` | инвариант · product | active |  | Definition не публикует ложный типизированный успех | [invariants/INV.APP.CODE-DEFINITION-READINESS.md](invariants/INV.APP.CODE-DEFINITION-READINESS.md) |
 | `INV.APP.CONFIG-SNAPSHOT` | инвариант · product | active |  | Оверлей конфигурации не меняет исходный снимок | [invariants/INV.APP.CONFIG-SNAPSHOT.md](invariants/INV.APP.CONFIG-SNAPSHOT.md) |
 | `INV.APP.DEFERRED-MANIFEST` | инвариант · product | active |  | Большое чтение отвечает ограниченным манифестом | [invariants/INV.APP.DEFERRED-MANIFEST.md](invariants/INV.APP.DEFERRED-MANIFEST.md) |
@@ -91,6 +92,7 @@
 | `INV.CI.LOCKED-WORKSPACE-BUILD` | инвариант · process | active |  | Ядро и bootstrap собираются одним закреплённым вызовом | [invariants/INV.CI.LOCKED-WORKSPACE-BUILD.md](invariants/INV.CI.LOCKED-WORKSPACE-BUILD.md) |
 | `INV.CI.NARROW-TARGET-ARTIFACTS` | инвариант · process | active |  | Межзадачные артефакты разделены по цели и назначению | [invariants/INV.CI.NARROW-TARGET-ARTIFACTS.md](invariants/INV.CI.NARROW-TARGET-ARTIFACTS.md) |
 | `INV.CI.ONE-AGGREGATE-GATE` | инвариант · process | active |  | Каждый pull request закрывает один агрегирующий шлюз | [invariants/INV.CI.ONE-AGGREGATE-GATE.md](invariants/INV.CI.ONE-AGGREGATE-GATE.md) |
+| `INV.CI.OPENCODE-CONSUMER-SMOKE` | инвариант · product | active |  | Дымовые потребители OpenCode гейтят теговый выпуск | [invariants/INV.CI.OPENCODE-CONSUMER-SMOKE.md](invariants/INV.CI.OPENCODE-CONSUMER-SMOKE.md) |
 | `INV.CI.PUBLISHED-ASSETS-REVERIFIED` | инвариант · process | active |  | Опубликованные байты скачиваются и проверяются повторно | [invariants/INV.CI.PUBLISHED-ASSETS-REVERIFIED.md](invariants/INV.CI.PUBLISHED-ASSETS-REVERIFIED.md) |
 | `INV.CI.REGISTRY-GUARDS-RUN` | инвариант · process | active |  | Стражи реестра входят в контур источника | [invariants/INV.CI.REGISTRY-GUARDS-RUN.md](invariants/INV.CI.REGISTRY-GUARDS-RUN.md) |
 | `INV.CI.RUNTIME-ARCHIVE-DETERMINISTIC` | инвариант · process | active |  | Архив ядра детерминирован и ограничен своей целью | [invariants/INV.CI.RUNTIME-ARCHIVE-DETERMINISTIC.md](invariants/INV.CI.RUNTIME-ARCHIVE-DETERMINISTIC.md) |
@@ -106,6 +108,7 @@
 | `INV.DOC.RECORD-SHAPE` | инвариант · process | active |  | Запись несёт обязательные поля своего вида | [invariants/INV.DOC.RECORD-SHAPE.md](invariants/INV.DOC.RECORD-SHAPE.md) |
 | `INV.DOC.SUPERPOWERS-BOUNDARY` | инвариант · process | active |  | Формы superpowers не входят в реестр | [invariants/INV.DOC.SUPERPOWERS-BOUNDARY.md](invariants/INV.DOC.SUPERPOWERS-BOUNDARY.md) |
 | `INV.HOST.KNOWLEDGE-BEHIND-FACADE` | инвариант · process | active |  | Знание о хосте живёт за host-фасадом | [invariants/INV.HOST.KNOWLEDGE-BEHIND-FACADE.md](invariants/INV.HOST.KNOWLEDGE-BEHIND-FACADE.md) |
+| `INV.HOST.OPENCODE-CLIENT-FLOOR` | инвариант · product | active |  | Пол клиента OpenCode задокументирован, а не потолок | [invariants/INV.HOST.OPENCODE-CLIENT-FLOOR.md](invariants/INV.HOST.OPENCODE-CLIENT-FLOOR.md) |
 | `INV.HOST.OPENCODE-PLATFORM-GATE` | инвариант · product | active |  | OpenCode-адаптер выбирает только поддерживаемые цели | [invariants/INV.HOST.OPENCODE-PLATFORM-GATE.md](invariants/INV.HOST.OPENCODE-PLATFORM-GATE.md) |
 | `INV.HOST.OPENCODE-SHARED-SURFACE` | инвариант · product | active |  | Адаптер OpenCode разделяет поверхность продукта | [invariants/INV.HOST.OPENCODE-SHARED-SURFACE.md](invariants/INV.HOST.OPENCODE-SHARED-SURFACE.md) |
 | `INV.MAINT.DONOR-PARITY` | инвариант · process | active |  | Донорские сценарии сравниваются с настоящими MCP-вызовами | [invariants/INV.MAINT.DONOR-PARITY.md](invariants/INV.MAINT.DONOR-PARITY.md) |

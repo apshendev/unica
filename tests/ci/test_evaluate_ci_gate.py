@@ -39,6 +39,8 @@ PUBLISH_SKIPPED = {
     "smoke-thin-plugin": "skipped",
     "verify-published-assets": "skipped",
     "publish-opencode-npm": "skipped",
+    "smoke-opencode-windows": "skipped",
+    "smoke-opencode-linux": "skipped",
 }
 
 
@@ -187,6 +189,8 @@ class EvaluateCiGateTests(unittest.TestCase):
             "smoke-thin-plugin": "success",
             "verify-published-assets": "success",
             "publish-opencode-npm": "success",
+            "smoke-opencode-windows": "success",
+            "smoke-opencode-linux": "success",
         }
 
         manual_evaluation = module.evaluate_gate("workflow_dispatch", "refs/heads/main", outputs, manual)
@@ -212,6 +216,8 @@ class EvaluateCiGateTests(unittest.TestCase):
             "smoke-thin-plugin": "success",
             "verify-published-assets": "success",
             "publish-opencode-npm": "skipped",
+            "smoke-opencode-windows": "skipped",
+            "smoke-opencode-linux": "skipped",
         }
         fork_results = {**upstream_results, "publish-opencode-npm": "failure"}
 
@@ -225,9 +231,12 @@ class EvaluateCiGateTests(unittest.TestCase):
         )
 
         self.assertTrue(upstream.ok)
-        self.assertEqual("skipped", upstream.expected["publish-opencode-npm"])
+        for job in ("publish-opencode-npm", "smoke-opencode-windows", "smoke-opencode-linux"):
+            self.assertEqual("skipped", upstream.expected[job], job)
         self.assertFalse(fork.ok)
         self.assertIn("publish-opencode-npm", fork.unexpected)
+        self.assertIn("smoke-opencode-windows", fork.unexpected)
+        self.assertIn("smoke-opencode-linux", fork.unexpected)
 
     def test_manual_dispatch_on_tag_ref_remains_non_publishing_full_contour(self) -> None:
         module = load_gate_module()

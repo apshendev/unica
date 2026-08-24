@@ -218,6 +218,25 @@ class OpenCodePackageCandidateTests(unittest.TestCase):
             manifest_bytes, (thin_root / "runtime-manifest.json").read_bytes()
         )
 
+    def test_the_candidate_documents_a_version_floor_not_a_ceiling(self) -> None:
+        readme = (PLUGIN_SOURCE / "opencode" / "README.md").read_text(encoding="utf-8")
+        adapter = (PLUGIN_SOURCE / "opencode" / "index.js").read_text(encoding="utf-8")
+
+        # Пол заявлен, перезапуск и медленный первый старт описаны.
+        self.assertIn("`1.18.22` or newer is required", readme)
+        self.assertIn("restart OpenCode", readme)
+        self.assertIn("first start", readme)
+        # Платформенный гейт, владение mcp.unica и адреса кеша задокументированы.
+        self.assertIn("Windows x64", readme)
+        self.assertIn("Linux x64", readme)
+        self.assertIn("mcp.unica", readme)
+        self.assertIn("is always replaced", readme)
+        self.assertIn("UNICA_RUNTIME_CACHE_DIR", readme)
+        # Адаптер не ограничивает версии OpenCode сверху: гейт — только
+        # платформенный.
+        self.assertNotIn("opencode-ai@", adapter)
+        self.assertNotIn("OPENCODE_VERSION", adapter)
+
     def test_a_development_manifest_never_becomes_a_candidate(self) -> None:
         thin_root, _version = self.build_thin_root()
         mutable = self.root / "dev-thin"

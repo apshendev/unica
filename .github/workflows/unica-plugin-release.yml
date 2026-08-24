@@ -740,6 +740,120 @@ jobs:
           --repo-root .
           --npm-root dist/npm
 
+  smoke-opencode-windows:
+    name: Smoke OpenCode consumer (win-x64, floor 1.18.22)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    needs: publish-opencode-npm
+    if: >-
+      ${{
+        always() &&
+        needs.publish-opencode-npm.result == 'success' &&
+        github.event_name == 'push' &&
+        startsWith(github.ref, 'refs/tags/') &&
+        github.repository == 'apshendev/unica'
+      }}
+    env:
+      UNICA_RUNTIME_CACHE_DIR: ${{ runner.temp }}/unica-runtime-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      # Пол, не потолок: потребитель ставит ровно версию пола, а адаптер не
+      # ограничивает версии OpenCode сверху.
+      - name: Install the floor OpenCode CLI
+        run: |
+          npm install -g opencode-ai@1.18.22
+          opencode --version
+      - name: Install the exact published package as an isolated consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python -c 'import json; print(json.load(open("plugins/unica/package.json"))["version"])')"
+          consumer="${RUNNER_TEMP}/opencode-consumer"
+          mkdir -p "$consumer"
+          (cd "$consumer" && opencode plugin "@apshendev/unica-opencode@${version}")
+      - name: Collect skill observations from the consumer
+        shell: bash
+        working-directory: ${{ runner.temp }}/opencode-consumer
+        run: opencode debug skill > skills.json
+      - name: Collect mcp observations from the consumer
+        shell: bash
+        working-directory: ${{ runner.temp }}/opencode-consumer
+        # Холодная установка рантайма занимает время — это часть проверки.
+        run: opencode mcp list | tee mcp.txt
+      - name: Verify the consumer observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/smoke-opencode-consumer.py verify-skills \
+            --json "$RUNNER_TEMP/opencode-consumer/skills.json" \
+            --plugin-root plugins/unica
+          python scripts/ci/smoke-opencode-consumer.py verify-mcp \
+            --output "$RUNNER_TEMP/opencode-consumer/mcp.txt"
+
+  smoke-opencode-linux:
+    name: Smoke OpenCode consumer (linux-x64, best effort)
+    runs-on: ubuntu-latest
+    # Linux-доставка — best effort: сбой виден в отчёте, но выпуск не блокирует.
+    continue-on-error: true
+    timeout-minutes: 40
+    needs: publish-opencode-npm
+    if: >-
+      ${{
+        always() &&
+        needs.publish-opencode-npm.result == 'success' &&
+        github.event_name == 'push' &&
+        startsWith(github.ref, 'refs/tags/') &&
+        github.repository == 'apshendev/unica'
+      }}
+    env:
+      UNICA_RUNTIME_CACHE_DIR: ${{ runner.temp }}/unica-runtime-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      # Пол, не потолок: потребитель ставит ровно версию пола, а адаптер не
+      # ограничивает версии OpenCode сверху.
+      - name: Install the floor OpenCode CLI
+        run: |
+          npm install -g opencode-ai@1.18.22
+          opencode --version
+      - name: Install the exact published package as an isolated consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python -c 'import json; print(json.load(open("plugins/unica/package.json"))["version"])')"
+          consumer="${RUNNER_TEMP}/opencode-consumer"
+          mkdir -p "$consumer"
+          (cd "$consumer" && opencode plugin "@apshendev/unica-opencode@${version}")
+      - name: Collect skill observations from the consumer
+        shell: bash
+        working-directory: ${{ runner.temp }}/opencode-consumer
+        run: opencode debug skill > skills.json
+      - name: Collect mcp observations from the consumer
+        shell: bash
+        working-directory: ${{ runner.temp }}/opencode-consumer
+        # Холодная установка рантайма занимает время — это часть проверки.
+        run: opencode mcp list | tee mcp.txt
+      - name: Verify the consumer observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/smoke-opencode-consumer.py verify-skills \
+            --json "$RUNNER_TEMP/opencode-consumer/skills.json" \
+            --plugin-root plugins/unica
+          python scripts/ci/smoke-opencode-consumer.py verify-mcp \
+            --output "$RUNNER_TEMP/opencode-consumer/mcp.txt"
+
   unica-ci:
     name: Unica CI
     runs-on: ubuntu-latest
@@ -759,6 +873,8 @@ jobs:
       - smoke-thin-plugin
       - verify-published-assets
       - publish-opencode-npm
+      - smoke-opencode-windows
+      - smoke-opencode-linux
     steps:
       - uses: actions/checkout@v7
       - name: Evaluate required CI results
