@@ -597,6 +597,7 @@ def write_release_runtime_manifest(
     plugin_version: str,
     release_tag: str,
     source_commit: str,
+    core_release_repository: str = SOURCE_REPOSITORY,
 ) -> None:
     expected_tag = f"v{plugin_version}"
     if release_tag != expected_tag:
@@ -613,9 +614,10 @@ def write_release_runtime_manifest(
             origin = item.get("assetOrigin")
             # Происхождение решает роль: ядро лежит в выпуске плагина, всё
             # прочее — в выпуске тулчейна под тегом, который назвал замок.
+            # Владельца выпуска ядра назвала сборка (CTR.PKG.CORE-PROVENANCE-SELECTABLE).
             if origin is None:
                 asset["url"] = (
-                    f"{SOURCE_REPOSITORY}/releases/download/{release_tag}/{asset['name']}"
+                    f"{core_release_repository}/releases/download/{release_tag}/{asset['name']}"
                 )
             else:
                 asset["url"] = (
@@ -641,11 +643,11 @@ def write_release_runtime_manifest(
         "pluginVersion": plugin_version,
         "development": False,
         "source": {
-            "repository": "https://github.com/IngvarConsulting/unica",
+            "repository": core_release_repository,
             "commit": source_commit,
         },
         "release": {
-            "repository": "https://github.com/IngvarConsulting/unica",
+            "repository": core_release_repository,
             "tag": release_tag,
         },
         "artifacts": artifacts,
@@ -728,6 +730,7 @@ def main() -> None:
     parser.add_argument("--tools-root", type=Path)
     parser.add_argument("--lock-file", type=Path, default=Path("plugins/unica/third-party/tools.lock.json"))
     parser.add_argument("--marketplace-name", default="unica-dev")
+    parser.add_argument("--core-release-repository", default=SOURCE_REPOSITORY)
     parser.add_argument("--out-dir", type=Path, required=True)
     args = parser.parse_args()
 
@@ -784,6 +787,7 @@ def main() -> None:
         plugin_version=version,
         release_tag=args.release_tag,
         source_commit=args.source_commit,
+        core_release_repository=args.core_release_repository,
     )
     write_packaged_mcp_launcher(plugin_dst)
 

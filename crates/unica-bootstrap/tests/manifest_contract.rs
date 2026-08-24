@@ -340,7 +340,60 @@ fn the_core_is_still_required_to_arrive_as_an_archive() {
     value["artifacts"]["unica"]["targets"]["linux-x64"]["asset"]["mediaType"] =
         serde_json::json!("application/octet-stream");
 
-    let error = parse(value).validate("0.7.0").unwrap_err();
+    let error = parse(value).validate("0.7.0").expect_err("mediaType");
 
     assert!(error.to_string().contains("mediaType"), "{error}");
+}
+
+/// Сборка форка называет себя владельцем ядра: адреса и идентичность — форк.
+const FORK_REPOSITORY: &str = "https://github.com/apshendev/unica";
+
+fn fork_fixture() -> serde_json::Value {
+    let mut value = fixture();
+    value["source"]["repository"] = serde_json::json!(FORK_REPOSITORY);
+    value["release"]["repository"] = serde_json::json!(FORK_REPOSITORY);
+    for target in ["darwin-arm64", "linux-x64", "win-x64"] {
+        value["artifacts"]["unica"]["targets"][target]["asset"]["url"] = serde_json::json!(
+            format!("{FORK_REPOSITORY}/releases/download/v0.7.0/unica-runtime-{target}.tar.gz")
+        );
+    }
+    value
+}
+
+#[test]
+fn a_fork_core_manifest_is_accepted_when_the_build_names_the_fork() {
+    parse(fork_fixture())
+        .validate_with_core_repository("0.7.0", FORK_REPOSITORY)
+        .expect("a build that names the fork owns its core addresses");
+}
+
+#[test]
+fn a_fork_core_manifest_is_refused_by_the_default_build() {
+    let error = parse(fork_fixture())
+        .validate("0.7.0")
+        .expect_err("the upstream build must not adopt a fork manifest");
+
+    assert!(error.to_string().contains("repository identity"), "{error}");
+}
+
+#[test]
+fn an_upstream_core_manifest_is_refused_by_a_fork_build() {
+    // «Никогда молча не качать ядро из upstream» — это отказ манифесту
+    // upstream, а не тихая подмена адреса.
+    let error = parse(fixture())
+        .validate_with_core_repository("0.7.0", FORK_REPOSITORY)
+        .expect_err("a fork build never accepts the upstream core release");
+
+    assert!(error.to_string().contains("repository identity"), "{error}");
+}
+
+#[test]
+fn a_fork_build_still_takes_its_engines_from_the_toolchain() {
+    let mut value = fork_fixture();
+    value["artifacts"]["rlm-tools-bsl"] =
+        fixture_with_engine()["artifacts"]["rlm-tools-bsl"].clone();
+
+    parse(value)
+        .validate_with_core_repository("0.7.0", FORK_REPOSITORY)
+        .expect("the toolchain origin does not move with the core owner");
 }

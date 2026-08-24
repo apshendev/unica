@@ -10,6 +10,18 @@ Two repositories are involved:
 - `IngvarConsulting/unica-marketplace` — the public catalog consumers install
   from.
 
+## Core release provenance
+
+The release workflow derives the core runtime owner from the repository it
+runs in (`CORE_RELEASE_REPOSITORY: https://github.com/${{ github.repository }}`)
+and passes it to both `build-unica-tools.py` and `package-unica-plugin.py`
+(`--core-release-repository`). On upstream this resolves to the same address
+the packager default names, so nothing changes for existing callers. A fork
+checkout names itself and must build both the bootstrap and the manifest with
+that same input — a manifest naming one owner never validates against a
+bootstrap built for another (`CTR.PKG.CORE-PROVENANCE-SELECTABLE`). Engine
+deliveries stay pinned to the toolchain repository regardless.
+
 ## Why publication has two phases
 
 The catalog must never point at bytes that are not final. If it moved in the

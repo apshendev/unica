@@ -1067,6 +1067,87 @@ class PackageUnicaPluginTests(unittest.TestCase):
             copied_mode = (dest / "v8-runner").stat().st_mode
             self.assertTrue(copied_mode & stat.S_IXUSR)
 
+    def write_release_fixture(self, root, version):
+        metadata_root = root / "metadata"
+        bootstrap_root = root / "bootstraps"
+        target_triples = {
+            "darwin-arm64": "aarch64-apple-darwin",
+            "linux-x64": "x86_64-unknown-linux-gnu",
+            "win-x64": "x86_64-pc-windows-msvc",
+        }
+        metadata_root.mkdir()
+        for target, target_triple in target_triples.items():
+            exe = ".exe" if target == "win-x64" else ""
+            bootstrap = (
+                bootstrap_root
+                / "bootstrap"
+                / "bin"
+                / target
+                / f"unica-bootstrap{exe}"
+            )
+            bootstrap.parent.mkdir(parents=True)
+            bootstrap.write_bytes(f"bootstrap {target}".encode())
+            # Ядро и один движок: манифест обязан нести оба, иначе
+            # разрезанная поставка не доедет до потребителя целиком.
+            (metadata_root / f"unica-runtime-{target}.json").write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 2,
+                        "artifact": "unica",
+                        "version": version,
+                        "role": "core",
+                        "target": target,
+                        "targetTriple": target_triple,
+                        "pluginVersion": version,
+                        "asset": {
+                            "name": f"unica-runtime-{target}.tar.gz",
+                            "mediaType": "application/gzip",
+                            "sha256": "1" * 64,
+                        },
+                        "files": [
+                            {
+                                "path": f"bin/{target}/unica{exe}",
+                                "sha256": "2" * 64,
+                                "executable": True,
+                            }
+                        ],
+                        "entrypoint": f"bin/{target}/unica{exe}",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (metadata_root / f"bsl-analyzer-runtime-{target}.json").write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 2,
+                        "artifact": "bsl-analyzer",
+                        "version": "0.2.67",
+                        "role": "engine",
+                        "target": target,
+                        "targetTriple": target_triple,
+                        "pluginVersion": version,
+                        "asset": {
+                            "name": f"bsl-analyzer-{target}{exe}",
+                            "mediaType": "application/octet-stream",
+                            "sha256": "3" * 64,
+                        },
+                        "assetOrigin": {
+                            "repository": TOOLCHAIN_REPOSITORY,
+                            "tag": "bsl-analyzer-v0.2.67-build.1",
+                        },
+                        "files": [
+                            {
+                                "path": f"bsl-analyzer{exe}",
+                                "sha256": "4" * 64,
+                                "executable": True,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+        return metadata_root, bootstrap_root, target_triples
+
     def test_generated_marketplace_is_thin_pinned_and_target_neutral(self) -> None:
         module = load_package_module()
         repo_root = Path(__file__).resolve().parents[2]
@@ -1075,87 +1156,11 @@ class PackageUnicaPluginTests(unittest.TestCase):
         # would have to come back and edit.
         version = module.read_release_version(repo_root / "plugins" / "unica")
         release_tag = f"v{version}"
-        target_triples = {
-            "darwin-arm64": "aarch64-apple-darwin",
-            "linux-x64": "x86_64-unknown-linux-gnu",
-            "win-x64": "x86_64-pc-windows-msvc",
-        }
-
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            metadata_root = root / "metadata"
-            bootstrap_root = root / "bootstraps"
-            metadata_root.mkdir()
-            for target, target_triple in target_triples.items():
-                exe = ".exe" if target == "win-x64" else ""
-                bootstrap = (
-                    bootstrap_root
-                    / "bootstrap"
-                    / "bin"
-                    / target
-                    / f"unica-bootstrap{exe}"
-                )
-                bootstrap.parent.mkdir(parents=True)
-                bootstrap.write_bytes(f"bootstrap {target}".encode())
-                # Ядро и один движок: манифест обязан нести оба, иначе
-                # разрезанная поставка не доедет до потребителя целиком.
-                (metadata_root / f"unica-runtime-{target}.json").write_text(
-                    json.dumps(
-                        {
-                            "schemaVersion": 2,
-                            "artifact": "unica",
-                            "version": version,
-                            "role": "core",
-                            "target": target,
-                            "targetTriple": target_triple,
-                            "pluginVersion": version,
-                            "asset": {
-                                "name": f"unica-runtime-{target}.tar.gz",
-                                "mediaType": "application/gzip",
-                                "sha256": "1" * 64,
-                            },
-                            "files": [
-                                {
-                                    "path": f"bin/{target}/unica{exe}",
-                                    "sha256": "2" * 64,
-                                    "executable": True,
-                                }
-                            ],
-                            "entrypoint": f"bin/{target}/unica{exe}",
-                        }
-                    ),
-                    encoding="utf-8",
-                )
-                (metadata_root / f"bsl-analyzer-runtime-{target}.json").write_text(
-                    json.dumps(
-                        {
-                            "schemaVersion": 2,
-                            "artifact": "bsl-analyzer",
-                            "version": "0.2.67",
-                            "role": "engine",
-                            "target": target,
-                            "targetTriple": target_triple,
-                            "pluginVersion": version,
-                            "asset": {
-                                "name": f"bsl-analyzer-{target}{exe}",
-                                "mediaType": "application/octet-stream",
-                                "sha256": "3" * 64,
-                            },
-                            "assetOrigin": {
-                                "repository": TOOLCHAIN_REPOSITORY,
-                                "tag": "bsl-analyzer-v0.2.67-build.1",
-                            },
-                            "files": [
-                                {
-                                    "path": f"bsl-analyzer{exe}",
-                                    "sha256": "4" * 64,
-                                    "executable": True,
-                                }
-                            ],
-                        }
-                    ),
-                    encoding="utf-8",
-                )
+            metadata_root, bootstrap_root, target_triples = self.write_release_fixture(
+                root, version
+            )
             out_dir = root / "out"
 
             argv = [
@@ -1224,6 +1229,14 @@ class PackageUnicaPluginTests(unittest.TestCase):
             self.assertEqual(runtime_manifest["source"]["commit"], "a" * 40)
             self.assertEqual(runtime_manifest["release"]["tag"], release_tag)
             self.assertEqual(
+                runtime_manifest["source"]["repository"],
+                "https://github.com/IngvarConsulting/unica",
+            )
+            self.assertEqual(
+                runtime_manifest["release"]["repository"],
+                "https://github.com/IngvarConsulting/unica",
+            )
+            self.assertEqual(
             sorted(runtime_manifest["artifacts"]["unica"]["targets"]),
             sorted(target_triples),
         )
@@ -1287,6 +1300,62 @@ class PackageUnicaPluginTests(unittest.TestCase):
             self.assertIn(
                 "cc-1c-skills", (plugin / "ATTRIBUTIONS.md").read_text(encoding="utf-8")
             )
+
+    def test_core_release_repository_override_names_the_fork_as_owner(self) -> None:
+        module = load_package_module()
+        repo_root = Path(__file__).resolve().parents[2]
+        version = module.read_release_version(repo_root / "plugins" / "unica")
+        fork = "https://github.com/apshendev/unica"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metadata_root, bootstrap_root, target_triples = self.write_release_fixture(
+                root, version
+            )
+            out_dir = root / "out"
+
+            argv = [
+                "package-unica-plugin.py",
+                "--repo-root",
+                str(repo_root),
+                "--runtime-metadata-root",
+                str(metadata_root),
+                "--bootstrap-root",
+                str(bootstrap_root),
+                "--release-tag",
+                f"v{version}",
+                "--source-commit",
+                "a" * 40,
+                "--out-dir",
+                str(out_dir),
+                "--core-release-repository",
+                fork,
+            ]
+            with patch("sys.argv", argv):
+                module.main()
+
+            plugin = out_dir / "marketplace" / "plugins" / "unica"
+            runtime_manifest = json.loads(
+                (plugin / "runtime-manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(runtime_manifest["source"]["repository"], fork)
+            self.assertEqual(runtime_manifest["release"]["repository"], fork)
+            for target, target_data in runtime_manifest["artifacts"]["unica"][
+                "targets"
+            ].items():
+                self.assertEqual(
+                    target_data["asset"]["url"],
+                    f"{fork}/releases/download/v{version}/unica-runtime-{target}.tar.gz",
+                )
+            for target, target_data in runtime_manifest["artifacts"]["bsl-analyzer"][
+                "targets"
+            ].items():
+                exe = ".exe" if target == "win-x64" else ""
+                self.assertEqual(
+                    target_data["asset"]["url"],
+                    f"{TOOLCHAIN_REPOSITORY}/releases/download/"
+                    f"bsl-analyzer-v0.2.67-build.1/bsl-analyzer-{target}{exe}",
+                )
 
     def test_local_debug_mode_remains_current_host_only_and_uses_unica_dev(self) -> None:
         module = load_package_module()

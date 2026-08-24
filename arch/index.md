@@ -5,6 +5,7 @@
 | Символ | Вид | Статус | Построено | Суть | Файл |
 | --- | --- | --- | --- | --- | --- |
 | `CTR.FORMAT.PLATFORM-XML-8-3-27` | контракт · product | active |  | Чтение ресурсов сохраняет байты корпуса Platform XML 8.3.27 | [contracts/CTR.FORMAT.PLATFORM-XML-8-3-27.md](contracts/CTR.FORMAT.PLATFORM-XML-8-3-27.md) |
+| `CTR.PKG.CORE-PROVENANCE-SELECTABLE` | контракт · product | active |  | Происхождение ядра выбирается сборкой с одним умолчанием | [contracts/CTR.PKG.CORE-PROVENANCE-SELECTABLE.md](contracts/CTR.PKG.CORE-PROVENANCE-SELECTABLE.md) |
 | `CTR.WIRE.LIST-CACHE-FIELDS` | контракт · product | active |  | Современный list несёт cache-поля, legacy сохраняет прежнюю форму | [contracts/CTR.WIRE.LIST-CACHE-FIELDS.md](contracts/CTR.WIRE.LIST-CACHE-FIELDS.md) |
 | `CTR.WIRE.TOOL-SURFACE` | контракт · product | active |  | Ведомость поверхности порождается из бинаря | [contracts/CTR.WIRE.TOOL-SURFACE.md](contracts/CTR.WIRE.TOOL-SURFACE.md) |
 | `DEC.2026-08-18.ARCHITECTURE-RESET` | решение · process | active | да | Архитектура описывается заново | [decisions/2026-08-18-architecture-reset.md](decisions/2026-08-18-architecture-reset.md) |
@@ -39,6 +40,7 @@
 | `DEC.2026-08-22.EVIDENCE-BOUNDED-PRESERVATION` | решение · product | active | да | Перенесённое обещание не шире исполняемого доказательства | [decisions/2026-08-22-evidence-bounded-preservation.md](decisions/2026-08-22-evidence-bounded-preservation.md) |
 | `DEC.2026-08-22.EVIDENCE-BOUNDED-SAFETY` | решение · product | active | да | Safety-правило не шире исполняемого доказательства | [decisions/2026-08-22-evidence-bounded-safety.md](decisions/2026-08-22-evidence-bounded-safety.md) |
 | `DEC.2026-08-22.LINEAR-PUBLICATION` | решение · product | active | да | Публикация выражается зависимостями одного конвейера | [decisions/2026-08-22-linear-publication.md](decisions/2026-08-22-linear-publication.md) |
+| `DEC.2026-08-24.CORE-PROVENANCE-NAMED-BY-BUILD` | решение · product | active | да | Происхождение ядра называет сборка | [decisions/2026-08-24-core-provenance-named-by-build.md](decisions/2026-08-24-core-provenance-named-by-build.md) |
 | `INV.APP.CODE-DEFINITION-READINESS` | инвариант · product | active |  | Definition не публикует ложный типизированный успех | [invariants/INV.APP.CODE-DEFINITION-READINESS.md](invariants/INV.APP.CODE-DEFINITION-READINESS.md) |
 | `INV.APP.CONFIG-SNAPSHOT` | инвариант · product | active |  | Оверлей конфигурации не меняет исходный снимок | [invariants/INV.APP.CONFIG-SNAPSHOT.md](invariants/INV.APP.CONFIG-SNAPSHOT.md) |
 | `INV.APP.DEFERRED-MANIFEST` | инвариант · product | active |  | Большое чтение отвечает ограниченным манифестом | [invariants/INV.APP.DEFERRED-MANIFEST.md](invariants/INV.APP.DEFERRED-MANIFEST.md) |

@@ -605,6 +605,25 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
 
         self.assertGreaterEqual(publish.count("gh auth setup-git"), 2)
 
+    def test_the_build_names_its_own_core_release_repository(self) -> None:
+        """Выпуск зовёт упаковку с адресом ядра этого репозитория.
+
+        Умолчание упаковщика — upstream-адрес; молчаливое умолчание в форке
+        собрало бы манифест, указывающий на чужой выпуск. Адрес обязана
+        назвать сама сборка (CTR.PKG.CORE-PROVENANCE-SELECTABLE).
+        """
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "CORE_RELEASE_REPOSITORY: https://github.com/${{ github.repository }}",
+            workflow,
+        )
+        for job_id in ("build-tools", "package-thin"):
+            block = job_block(workflow, job_id)
+            self.assertTrue(block, f"job {job_id} not found")
+            self.assertIn('"$CORE_RELEASE_REPOSITORY"', block)
+            self.assertIn("--core-release-repository", block)
+
     def test_publication_is_one_linear_pass_ordered_by_needs(self) -> None:
         """ADR-0068: stage → tag → verify → promote, no pull requests, no warden.
 

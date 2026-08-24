@@ -2528,6 +2528,10 @@ fn test_only() { std::process::Command::new("git"); }
         Разойдись эти списки — выпуск соберётся, а установка откажет уже у
         пользователя: «origin is outside the approved release origin». Ловить
         это надо здесь, а не в поле.
+
+        Происхождение ядра выбирает сборка (DEC.2026-08-24.CORE-PROVENANCE-NAMED-BY-BUILD):
+        в валидаторе остаётся ровно один литеральный тулчейн-адрес, адрес ядра
+        приходит параметром и проверяется отдельно.
         """
         repo_root = Path(__file__).resolve().parents[2]
         packager = (repo_root / "scripts/ci/package-unica-plugin.py").read_text(
@@ -2544,7 +2548,9 @@ fn test_only() { std::process::Command::new("git"); }
         for origin in approved:
             with self.subTest(origin=origin):
                 self.assertIn(f'"{origin}"', packager)
-                self.assertIn(f'"{origin}/releases/download/"', validator)
+
+        toolchain_origin = "https://github.com/IngvarConsulting/unica-toolchain"
+        self.assertIn(f'"{toolchain_origin}/releases/download/"', validator)
 
         emitted_origins = set(
             re.findall(
@@ -2556,10 +2562,48 @@ fn test_only() { std::process::Command::new("git"); }
         self.assertEqual(emitted_origins, approved)
 
         # Список закрыт с обеих сторон: третий адрес — новая запись реестра.
+        # Адрес ядра в валидаторе — умолчание, а не единственный вариант.
         self.assertEqual(
-            len(re.findall(r'"https://github\.com/IngvarConsulting/[\w-]+/releases/download/"', validator)),
-            len(approved),
+            len(
+                re.findall(
+                    r'"https://github\.com/IngvarConsulting/[\w-]+/releases/download/"',
+                    validator,
+                )
+            ),
+            1,
         )
+
+    def test_core_provenance_is_selectable_on_both_sides_of_the_wire(self) -> None:
+        """CTR.PKG.CORE-PROVENANCE-SELECTABLE: происхождение ядра называет сборка.
+
+        Упаковщик обязан принимать адрес явным входом, а валидатор — уметь
+        свериться с адресом, который назвала сборка, не теряя умолчания.
+        """
+        repo_root = Path(__file__).resolve().parents[2]
+        packager = (repo_root / "scripts/ci/package-unica-plugin.py").read_text(
+            encoding="utf-8"
+        )
+        validator = (
+            repo_root / "crates/unica-bootstrap/src/manifest.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"--core-release-repository"', packager)
+        self.assertIn("default=SOURCE_REPOSITORY", packager)
+        self.assertIn('option_env!("UNICA_BOOTSTRAP_CORE_REPOSITORY")', validator)
+
+        (packager_core,) = re.findall(
+            r'^SOURCE_REPOSITORY = "([^"]+)"$', packager, re.MULTILINE
+        )
+        (validator_core,) = re.findall(
+            r'^const DEFAULT_SOURCE_REPOSITORY: &str = "([^"]+)";$',
+            validator,
+            re.MULTILINE,
+        )
+        self.assertEqual(packager_core, validator_core)
+
+        # Выборочность не расползается: тулчейн-адрес сборкой не переопределяется.
+        self.assertNotIn("UNICA_BOOTSTRAP_TOOLCHAIN_REPOSITORY", packager)
+        self.assertNotIn("UNICA_BOOTSTRAP_TOOLCHAIN_REPOSITORY", validator)
 
     def test_startup_documentation_separates_core_blocking_from_engine_delivery(self) -> None:
         readme = (

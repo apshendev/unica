@@ -890,7 +890,7 @@ class BuildUnicaToolsTests(unittest.TestCase):
             bootstrap_binary.write_bytes(b"native bootstrap")
             calls = []
 
-            def fake_run(args, *, cwd=None):
+            def fake_run(args, *, cwd=None, env=None):
                 calls.append((args, cwd))
 
             with (
@@ -946,6 +946,61 @@ class BuildUnicaToolsTests(unittest.TestCase):
                     "--target-dir",
                     str(target_dir),
                 ],
+            )
+
+    def test_the_build_names_the_core_repository_to_the_bootstrap(self) -> None:
+        module = load_build_module()
+        fork = "https://github.com/apshendev/unica"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo_root = root / "repo"
+            repo_root.mkdir()
+            target_dir = root / "cargo-target"
+            runtime_binary = target_dir / "release" / "unica"
+            runtime_binary.parent.mkdir(parents=True)
+            runtime_binary.write_bytes(b"rust mcp")
+            bootstrap_binary = target_dir / "release" / "unica-bootstrap"
+            bootstrap_binary.write_bytes(b"native bootstrap")
+            target_bin_dir = root / "bundle" / "bin" / "linux-x64"
+            target_bin_dir.mkdir(parents=True)
+            environments = []
+
+            def fake_run(args, *, cwd=None, env=None):
+                environments.append(env)
+
+            owners = {
+                "unica": {"unica-coder"},
+                "unica-bootstrap": {"unica-bootstrap"},
+            }
+
+            with (
+                patch.object(module, "run", side_effect=fake_run),
+                patch.object(module.time, "monotonic", side_effect=[10.0, 12.5, 10.0, 12.5]),
+            ):
+                common = dict(
+                    repo_root=repo_root,
+                    target_dir=target_dir,
+                    target_bin_dir=target_bin_dir,
+                    bundle_root=root / "bundle",
+                    target="linux-x64",
+                    exe="",
+                    workspace_binary_owners=owners,
+                )
+                module.build_cargo_workspace_binaries(
+                    [], **common, core_release_repository=fork
+                )
+                module.build_cargo_workspace_binaries(
+                    [], **common, core_release_repository=None
+                )
+
+            self.assertEqual(len(environments), 2)
+            self.assertEqual(
+                environments[0]["UNICA_BOOTSTRAP_CORE_REPOSITORY"], fork
+            )
+            self.assertTrue(
+                environments[1] is None
+                or "UNICA_BOOTSTRAP_CORE_REPOSITORY" not in environments[1]
             )
 
     def test_workspace_binary_pairs_are_rejected_before_build_when_lock_is_malformed(self) -> None:

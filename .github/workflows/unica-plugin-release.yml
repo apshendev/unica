@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # Владелец выпуска ядра выводится из репозитория сборки: upstream получает
+  # прежний адрес без литерала в файле, форк — самосогласованную поставку
+  # без правки workflow. env — данные для GitHub, не скрипт.
+  CORE_RELEASE_REPOSITORY: https://github.com/${{ github.repository }}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -209,6 +215,7 @@ jobs:
           --out-dir ".build/tool-bundles/${{ matrix.target }}"
           --work-dir .build/tool-work
           --metrics-file ".build/cargo-metrics/${{ matrix.target }}.json"
+          --core-release-repository "$CORE_RELEASE_REPOSITORY"
       - name: Build, install, and verify local development on Windows
         if: matrix.target == 'win-x64'
         shell: bash
@@ -218,7 +225,8 @@ jobs:
           codex_home="$(cygpath -m "$build_root/codex-home")"
           CODEX_HOME="$codex_home" \
             scripts/dev/install-local-unica.sh \
-              --build-dir "$build_root"
+              --build-dir "$build_root" \
+              --core-release-repository "$CORE_RELEASE_REPOSITORY"
 
           bundle_manifest="$(find "$build_root/tool-artifacts" \
             -mindepth 2 -maxdepth 2 -name tools.json -print -quit)"
@@ -448,6 +456,7 @@ jobs:
           --bootstrap-root .build/bootstrap-root
           --release-tag "$RELEASE_TAG"
           --source-commit "${{ github.sha }}"
+          --core-release-repository "$CORE_RELEASE_REPOSITORY"
           --out-dir dist/thin
       - name: Require both host contracts in the shared plugin directory
         run: |

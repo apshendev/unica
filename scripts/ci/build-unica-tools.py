@@ -63,9 +63,9 @@ def load_lock(path: Path) -> dict:
     return lock
 
 
-def run(args: list[str], *, cwd: Path | None = None) -> None:
+def run(args: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(args), flush=True)
-    subprocess.run(args, cwd=cwd, check=True)
+    subprocess.run(args, cwd=cwd, env=env, check=True)
 
 
 def load_cargo_workspace_binary_owners(repo_root: Path) -> dict[str, set[str]]:
@@ -299,6 +299,7 @@ def build_cargo_workspace_binaries(
     target: str,
     exe: str,
     workspace_binary_owners: dict[str, set[str]],
+    core_release_repository: str | None = None,
 ) -> tuple[dict[str, Path], Path, float]:
     """Build runtime and package infrastructure in one locked Cargo invocation."""
     requested_pairs = [
@@ -330,7 +331,14 @@ def build_cargo_workspace_binaries(
     command.extend(["--target-dir", str(target_dir)])
 
     started_at = time.monotonic()
-    run(command, cwd=repo_root)
+    # Владельца выпуска ядра называет сборка: bootstrap запекает его как
+    # одобренное происхождение (CTR.PKG.CORE-PROVENANCE-SELECTABLE). Без
+    # входа окружение не трогается, и bootstrap берёт собственное умолчание.
+    cargo_env = None
+    if core_release_repository is not None:
+        cargo_env = dict(os.environ)
+        cargo_env["UNICA_BOOTSTRAP_CORE_REPOSITORY"] = core_release_repository
+    run(command, cwd=repo_root, env=cargo_env)
     cargo_build_seconds = time.monotonic() - started_at
 
     target_bin_dir.mkdir(parents=True, exist_ok=True)
@@ -577,6 +585,7 @@ def build_locked_bundle(
         target=args.target,
         exe=exe,
         workspace_binary_owners=load_cargo_workspace_binary_owners(args.repo_root.resolve()),
+        core_release_repository=getattr(args, "core_release_repository", None),
     )
     built_paths.update(cargo_paths)
     for tool in cargo_tools:
@@ -647,6 +656,7 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--work-dir", type=Path, default=Path(".build/unica-tools"))
     parser.add_argument("--metrics-file", type=Path)
+    parser.add_argument("--core-release-repository")
     args = parser.parse_args()
 
     lock = load_lock(args.lock_file)

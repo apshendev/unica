@@ -11,6 +11,8 @@ install it as a local Codex marketplace, and verify fresh-session visibility.
 Options:
   --marketplace-name NAME  Codex marketplace name (default: unica-dev)
   --build-dir DIR         Build directory (default: .build/local-codex-unica)
+  --core-release-repository URL
+                          Owner of the core release (default: upstream unica)
   --skip-build            Reuse an existing target tool bundle in --build-dir
   --skip-install          Build/package only, do not modify Codex config/cache
   --skip-verify           Do not run codex debug prompt-input verification
@@ -43,6 +45,7 @@ BUILD_ROOT="${UNICA_LOCAL_BUILD_DIR:-$REPO_ROOT/.build/local-codex-unica}"
 DO_BUILD=1
 DO_INSTALL=1
 DO_VERIFY=1
+CORE_RELEASE_REPOSITORY=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -52,6 +55,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --build-dir)
       BUILD_ROOT="${2:?missing value for --build-dir}"
+      shift 2
+      ;;
+    --core-release-repository)
+      CORE_RELEASE_REPOSITORY="${2:?missing value for --core-release-repository}"
       shift 2
       ;;
     --skip-build)
@@ -174,6 +181,11 @@ echo "==> Unica local target: $TARGET"
 echo "==> Build root: $BUILD_ROOT"
 echo "==> Marketplace: $MARKETPLACE_NAME"
 
+CORE_REPOSITORY_ARGS=()
+if [ -n "$CORE_RELEASE_REPOSITORY" ]; then
+  CORE_REPOSITORY_ARGS=(--core-release-repository "$CORE_RELEASE_REPOSITORY")
+fi
+
 if [ "$DO_BUILD" -eq 1 ]; then
   rm -rf "$TOOL_BUNDLE"
   "$PYTHON_BIN" scripts/ci/build-unica-tools.py \
@@ -181,7 +193,8 @@ if [ "$DO_BUILD" -eq 1 ]; then
     --lock-file plugins/unica/third-party/tools.lock.json \
     --out-dir "$TOOL_BUNDLE" \
     --work-dir "$WORK_DIR" \
-    --metrics-file "$METRICS_FILE"
+    --metrics-file "$METRICS_FILE" \
+    ${CORE_REPOSITORY_ARGS[@]+"${CORE_REPOSITORY_ARGS[@]}"}
 else
   if [ ! -f "$TOOL_BUNDLE/tools.json" ]; then
     echo "--skip-build requested, but bundle is missing: $TOOL_BUNDLE/tools.json" >&2
@@ -196,6 +209,7 @@ rm -rf "$PACKAGE_OUT"
   --lock-file plugins/unica/third-party/tools.lock.json \
   --out-dir "$PACKAGE_OUT" \
   --marketplace-name "$MARKETPLACE_NAME" \
+  ${CORE_REPOSITORY_ARGS[@]+"${CORE_REPOSITORY_ARGS[@]}"} \
   --local-debug-target "$TARGET"
 
 "$PYTHON_BIN" -m json.tool "$MARKETPLACE_DIR/.agents/plugins/marketplace.json" >/dev/null

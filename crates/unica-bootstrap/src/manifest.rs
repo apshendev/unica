@@ -7,10 +7,22 @@ use serde::{Deserialize, Serialize};
 use crate::error::{BootstrapError, Failure, Result};
 use crate::platform::HostTarget;
 
-const SOURCE_REPOSITORY: &str = "https://github.com/IngvarConsulting/unica";
+/// Умолчание владельца ядра: сборка без явного входа остаётся upstream-сборкой.
+const DEFAULT_SOURCE_REPOSITORY: &str = "https://github.com/IngvarConsulting/unica";
+
+/// Репозиторий выпуска ядра называет сборка
+/// (`DEC.2026-08-24.CORE-PROVENANCE-NAMED-BY-BUILD`): упаковщик принимает то же
+/// происхождение своим входом, поэтому расхождение сторон — отказ установки, а
+/// не молчаливое скачивание из чужого выпуска.
+fn approved_core_repository() -> &'static str {
+    option_env!("UNICA_BOOTSTRAP_CORE_REPOSITORY").unwrap_or(DEFAULT_SOURCE_REPOSITORY)
+}
 
 /// Откуда приезжает ядро: оно собирается здесь и лежит в выпуске плагина.
-const CORE_RELEASE_ORIGIN: &str = "https://github.com/IngvarConsulting/unica/releases/download/";
+/// Владельца выпуска называет сборка; умолчание — upstream.
+fn core_release_origin(core_repository: &str) -> String {
+    format!("{core_repository}/releases/download/")
+}
 
 /// Откуда приезжает всё остальное. Тулчейн публикует поставки по цели, с
 /// суммами и происхождением; копия тех же байтов в выпуске плагина стоила
@@ -56,10 +68,10 @@ pub enum ArtifactRole {
 impl ArtifactRole {
     /// Происхождение решает роль, а не имя: ядро собирается здесь, всё
     /// остальное приезжает из тулчейна.
-    fn release_origin(self) -> &'static str {
+    fn release_origin(self, core_repository: &str) -> String {
         match self {
-            Self::Core => CORE_RELEASE_ORIGIN,
-            Self::Engine => TOOLCHAIN_RELEASE_ORIGIN,
+            Self::Core => core_release_origin(core_repository),
+            Self::Engine => TOOLCHAIN_RELEASE_ORIGIN.to_string(),
         }
     }
 }
@@ -180,6 +192,16 @@ impl RuntimeManifest {
     }
 
     pub fn validate(&self, plugin_version: &str) -> Result<()> {
+        self.validate_with_core_repository(plugin_version, approved_core_repository())
+    }
+
+    /// Валидация против названного сборкой владельца ядра
+    /// (`CTR.PKG.CORE-PROVENANCE-SELECTABLE`).
+    pub fn validate_with_core_repository(
+        &self,
+        plugin_version: &str,
+        core_repository: &str,
+    ) -> Result<()> {
         if self.schema_version != 2 {
             return Err(BootstrapError::of(
                 Failure::Configuration,
@@ -198,12 +220,12 @@ impl RuntimeManifest {
                 ),
             ));
         }
-        if self.source.repository != SOURCE_REPOSITORY
-            || self.release.repository != SOURCE_REPOSITORY
-        {
+        if self.source.repository != core_repository || self.release.repository != core_repository {
             return Err(BootstrapError::of(
                 Failure::Configuration,
-                "runtime manifest repository identity is not IngvarConsulting/unica",
+                format!(
+                    "runtime manifest repository identity does not match the approved core repository {core_repository}"
+                ),
             ));
         }
 
@@ -291,6 +313,7 @@ impl RuntimeManifest {
                     &self.release.tag,
                     host_target,
                     &artifact.targets[host_target.as_str()],
+                    core_repository,
                 )?;
             }
         }
@@ -323,11 +346,13 @@ fn validate_target(
     release_tag: &str,
     host: HostTarget,
     target: &TargetRuntime,
+    core_repository: &str,
 ) -> Result<()> {
     let name = host.as_str();
     if role == ArtifactRole::Core {
         // Ядро собирается здесь: имя выводится единым правилом, а адрес прибит
-        // к выпуску плагина под тегом его версии.
+        // к выпуску плагина под тегом его версии. Владельца выпуска назвала
+        // сборка, и адрес обязан ему принадлежать.
         let expected_asset = format!("{artifact}-runtime-{name}.tar.gz");
         if target.asset.name != expected_asset {
             return Err(BootstrapError::of(
@@ -335,14 +360,19 @@ fn validate_target(
                 format!("runtime asset {} != {expected_asset}", target.asset.name),
             ));
         }
-        if target.asset.url != format!("{CORE_RELEASE_ORIGIN}{release_tag}/{expected_asset}") {
+        if target.asset.url
+            != format!(
+                "{}{release_tag}/{expected_asset}",
+                core_release_origin(core_repository)
+            )
+        {
             return Err(BootstrapError::of(
                 Failure::Configuration,
                 format!("runtime asset URL for {name} is outside the approved release origin"),
             ));
         }
     } else {
-        validate_toolchain_asset(artifact, role, name, target)?;
+        validate_toolchain_asset(artifact, role, name, target, core_repository)?;
     }
     // Ядро несёт бинарь и его окружение: одним файлом оно не бывает.
     let form = match DeliveryForm::of(&target.asset.media_type) {
@@ -434,6 +464,7 @@ fn validate_toolchain_asset(
     role: ArtifactRole,
     name: &str,
     target: &TargetRuntime,
+    core_repository: &str,
 ) -> Result<()> {
     if target.asset.name.is_empty()
         || target.asset.name.contains('/')
@@ -455,7 +486,7 @@ fn validate_toolchain_asset(
     let tail = target
         .asset
         .url
-        .strip_prefix(role.release_origin())
+        .strip_prefix(&role.release_origin(core_repository))
         .ok_or_else(outside)?;
     let tag = tail
         .strip_suffix(&format!("/{}", target.asset.name))
