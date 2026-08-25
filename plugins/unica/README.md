@@ -39,6 +39,14 @@ claude plugin install unica@unica
 Claude Code 2.1.68 and earlier reject the catalog's `git-subdir` source type and
 cannot load it at all; 2.1.69 is the first release that accepts it.
 
+## OpenCode
+
+OpenCode is served by a separate npm package, `@apshendev/unica-opencode`.
+The package is currently a local candidate: the npm publication is being
+prepared, and the working way today is local verification of an assembled
+`.tgz`. The full guide lives in
+[`plugins/unica/opencode/README.md`](opencode/README.md).
+
 ## Legacy transition boundary
 
 Unica `v0.7.8` is the immutable migration bridge. A local, duplicated, or

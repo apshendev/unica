@@ -218,24 +218,85 @@ class OpenCodePackageCandidateTests(unittest.TestCase):
             manifest_bytes, (thin_root / "runtime-manifest.json").read_bytes()
         )
 
+    def test_the_readme_is_russian_and_names_local_verification(self) -> None:
+        readme = (PLUGIN_SOURCE / "opencode" / "README.md").read_text(encoding="utf-8")
+
+        # Статус и разделы руководства: локальная проверка — рабочий способ,
+        # npm-установка — отдельный раздел про будущую публикацию.
+        self.assertIn("пока не опубликован", readme)
+        self.assertIn("Локальная проверка собранного пакета", readme)
+        self.assertIn("Установка из npm", readme)
+        # Локальный рецепт называет свои команды целиком.
+        self.assertIn("npm install --ignore-scripts", readme)
+        self.assertIn("file://", readme)
+        self.assertIn("node_modules/@apshendev/unica-opencode", readme)
+        self.assertIn("opencode debug skill", readme)
+        self.assertIn("opencode mcp list", readme)
+        self.assertIn("1.18.22", readme)
+        self.assertIn("или новее", readme)
+
+    def test_the_readme_documents_ownership_platform_and_caches_in_russian(
+        self,
+    ) -> None:
+        readme = (PLUGIN_SOURCE / "opencode" / "README.md").read_text(encoding="utf-8")
+
+        # Владение сервером, платформы и адреса кешей задокументированы.
+        self.assertIn("mcp.unica", readme)
+        self.assertIn("заменяется", readme)
+        self.assertIn("Windows x64", readme)
+        self.assertIn("Linux x64", readme)
+        self.assertIn("UNICA_RUNTIME_CACHE_DIR", readme)
+        self.assertIn("UNICA_PROVIDER_STATE_DIR", readme)
+        self.assertIn("первый запуск", readme.lower())
+
+    def test_the_packed_tarball_carries_the_local_verification_readme(self) -> None:
+        if shutil.which("npm") is None:
+            self.skipTest("npm is not available")
+        thin_root, _version = self.build_thin_root()
+        out_dir = self.root / "npm-readme-out"
+
+        self.package_candidate(thin_root, out_dir, runs=None)
+
+        tarball = out_dir / [p.name for p in out_dir.glob("*.tgz")][0]
+        self.assertTrue(tarball.is_file(), sorted(p.name for p in out_dir.iterdir()))
+        with tarfile.open(tarball, "r:gz") as archive:
+            packed = archive.extractfile("package/README.md").read().decode("utf-8")
+
+        self.assertIn("Локальная проверка собранного пакета", packed)
+        self.assertIn("npm install --ignore-scripts", packed)
+        self.assertIn("opencode debug skill", packed)
+        self.assertIn("opencode mcp list", packed)
+
     def test_the_candidate_documents_a_version_floor_not_a_ceiling(self) -> None:
         readme = (PLUGIN_SOURCE / "opencode" / "README.md").read_text(encoding="utf-8")
         adapter = (PLUGIN_SOURCE / "opencode" / "index.js").read_text(encoding="utf-8")
 
-        # Пол заявлен, перезапуск и медленный первый старт описаны.
-        self.assertIn("`1.18.22` or newer is required", readme)
-        self.assertIn("restart OpenCode", readme)
-        self.assertIn("first start", readme)
-        # Платформенный гейт, владение mcp.unica и адреса кеша задокументированы.
-        self.assertIn("Windows x64", readme)
-        self.assertIn("Linux x64", readme)
-        self.assertIn("mcp.unica", readme)
-        self.assertIn("is always replaced", readme)
-        self.assertIn("UNICA_RUNTIME_CACHE_DIR", readme)
+        # Пол заявлен, перезапуск и первый старт описаны.
+        self.assertIn("1.18.22", readme)
+        self.assertIn("или новее", readme)
+        self.assertIn("перезапустите OpenCode", readme)
+        self.assertIn("первый запуск", readme.lower())
         # Адаптер не ограничивает версии OpenCode сверху: гейт — только
         # платформенный.
         self.assertNotIn("opencode-ai@", adapter)
         self.assertNotIn("OPENCODE_VERSION", adapter)
+
+    def test_the_opencode_guide_is_reachable_from_both_readmes(self) -> None:
+        guide = "plugins/unica/opencode/README.md"
+
+        root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        plugin_readme = (PLUGIN_SOURCE / "README.md").read_text(encoding="utf-8")
+        package_json = json.loads(
+            (PLUGIN_SOURCE / "package.json").read_text(encoding="utf-8")
+        )
+
+        self.assertIn("OpenCode", root_readme)
+        self.assertIn(guide, root_readme)
+        self.assertIn(guide, plugin_readme)
+        self.assertEqual(
+            package_json["homepage"],
+            "https://github.com/apshendev/unica/blob/main/plugins/unica/opencode/README.md",
+        )
 
     def test_a_development_manifest_never_becomes_a_candidate(self) -> None:
         thin_root, _version = self.build_thin_root()

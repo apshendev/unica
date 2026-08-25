@@ -54,6 +54,13 @@ claude plugin install unica@unica
 Затем выполните `/reload-plugins` либо начните новую сессию. Навыки становятся
 доступны с префиксом плагина, например `/unica:meta-info`.
 
+### OpenCode
+
+Пакет `@apshendev/unica-opencode` — локальный candidate: npm-публикация
+готовится, реестр пока не содержит пакета. Рабочий способ сегодня — локальная
+проверка собранного `.tgz`; инструкция — в
+[руководстве OpenCode](plugins/unica/opencode/README.md).
+
 ### Доставка ядра и движков
 
 При старте MCP bootstrap скачивает только ядро `unica` из релиза

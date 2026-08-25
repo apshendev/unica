@@ -183,6 +183,8 @@ uv run python -m unittest tests.ci.test_version_contract -v
 
 Ожидаемое падение: английский README без локального раздела.
 
+> Выполнено: 2026-08-25 16:02 (2.1 — RED: 4 ожидаемых падения на английском README)
+
 ### 2.2. Зелёный: русский README
 
 Переписать `plugins/unica/opencode/README.md` на русском. Структура:
@@ -215,6 +217,8 @@ uv run python -m unittest tests.ci.test_version_contract -v
 prerelease; тест этапа 2.1 сформулирован под текущий статус и обновляется
 этапом 7.5 тем же PR, что и README.
 
+> Выполнено: 2026-08-25 16:02 (2.2 — русский README по структуре 1–7 написан)
+
 ### 2.3. Красный: обнаруживаемость
 
 Новый тест `test_the_opencode_guide_is_reachable_from_both_readmes` (в
@@ -228,12 +232,16 @@ prerelease; тест этапа 2.1 сформулирован под текущ
 
 Ожидаемое падение: ссылок нет, homepage ведёт на корень.
 
+> Выполнено: 2026-08-25 16:02 (2.3 — RED: 'OpenCode' not found в корневом README)
+
 ### 2.4. Зелёный
 
 - Корневой `README.md`: раздел «OpenCode» после «Claude Code» — статус
   (локальный candidate; npm-публикация готовится), ссылка на руководство.
 - `plugins/unica/README.md`: секция «OpenCode» со ссылкой.
 - `plugins/unica/package.json`: `homepage` как выше.
+
+> Выполнено: 2026-08-25 16:02 (2.4 — разделы OpenCode и homepage установлены)
 
 ### 2.5. Проверка этапа
 
@@ -244,6 +252,8 @@ python -m unittest tests.ci.test_package_unica_opencode -v
 Критерии ревью 4 и 5 закрыты: README русский, локальный способ описан,
 `staging/README.md` порождается байт-в-байт (существующий ассерт остаётся
 зелёным), обе ссылки и homepage закреплены тестом.
+
+> Выполнено: 2026-08-25 16:02 (2.5 — tests.ci.test_package_unica_opencode: Ran 11 tests, OK)
 
 ---
 

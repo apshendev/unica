@@ -1,15 +1,69 @@
-# Unica for OpenCode
+# Unica для OpenCode
 
-This npm package installs the [Unica](https://github.com/apshendev/unica)
-1C:Enterprise development workflows into
-[OpenCode](https://opencode.ai): the complete packaged skill set and the
-single public `unica` MCP server with its `unica.*` tools.
+Этот npm-пакет добавляет рабочие процессы разработки
+[1С:Предприятия](https://github.com/apshendev/unica) в
+[OpenCode](https://opencode.ai): полный упакованный набор навыков и единственный
+публичный MCP-сервер `unica` с инструментами `unica.*`.
 
-## Installation
+**Статус:** npm-пакет `@apshendev/unica-opencode` пока не опубликован. Рабочий
+способ использовать Unica в OpenCode сегодня — локальная проверка собранного
+`.tgz` (раздел ниже). Раздел «Установка из npm» вступает в силу после первой
+публикации.
 
-Add the package to the `plugin` array in your OpenCode configuration
-(`opencode.json` in the project, or `~/.config/opencode/opencode.json`
-globally):
+## Локальная проверка собранного пакета
+
+Полная процедура рассчитана на OpenCode `1.18.22` или новее и повторяет
+проверенный рецепт локального тестирования выпуска.
+
+1. Соберите `.tgz` упаковщиком `scripts/ci/package-unica-opencode.py` от
+   thin-корня артефакта tag-run выпуска (см. план
+   `docs/plans/2026-08-25-opencode-local-test-fix-steps.md`):
+   ```sh
+   python scripts/ci/package-unica-opencode.py \
+     --repo-root . \
+     --thin-root <путь к thin-корню>/plugins/unica \
+     --out-dir dist/local-opencode
+   ```
+2. Создайте пустой каталог-потребитель и установите пакет из локального
+   архива:
+   ```sh
+   mkdir consumer && cd consumer
+   npm init -y
+   npm install --ignore-scripts <абсолютный путь к .tgz>
+   ```
+3. Создайте `opencode.json` в каталоге потребителя со ссылкой на установленный
+   пакет через абсолютный `file://` URI каталога
+   `node_modules/@apshendev/unica-opencode`:
+   ```json
+   {
+     "plugin": ["file:///abs/path/to/consumer/node_modules/@apshendev/unica-opencode"]
+   }
+   ```
+4. Изолируйте окружение от пользовательских конфигураций и кешей:
+   `OPENCODE_CONFIG_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`,
+   `XDG_STATE_HOME`, а также `UNICA_RUNTIME_CACHE_DIR` и
+   `UNICA_PROVIDER_STATE_DIR` — каждое на свой пустой каталог.
+5. Полностью перезапустите OpenCode: плагины npm загружаются при старте,
+   изменения конфигурации действуют только после перезапуска. Требуется
+   OpenCode `1.18.22` или новее.
+6. Соберите наблюдения:
+   ```sh
+   opencode debug skill
+   opencode mcp list
+   ```
+   Ожидаемый результат — `unica connected`; в деталях её блока — команда
+   упакованного bootstrap из
+   `node_modules/@apshendev/unica-opencode/bootstrap/bin/<target>/unica-bootstrap`.
+
+Первый запуск может надолго задержаться: адаптер скачивает и проверяет ядро
+runtime с нуля (подробности в разделе «Первый запуск и кеши»). Это ожидаемое
+поведение холодной доставки, а не зависание.
+
+## Установка из npm
+
+Раздел вступает в силу после первой публикации пакета. Добавьте пакет в массив
+`plugin` конфигурации OpenCode (`opencode.json` в проекте или
+`~/.config/opencode/opencode.json` глобально):
 
 ```json
 {
@@ -17,53 +71,46 @@ globally):
 }
 ```
 
-Then **quit and restart OpenCode**. OpenCode installs npm plugins at startup
-and configuration-time changes only take effect after a restart.
+Затем **полностью перезапустите OpenCode**. Чтобы закрепить конкретную версию,
+используйте обычный npm-синтаксис: `"@apshendev/unica-opencode@0.12.0"`.
 
-The documentation uses the unpinned package name so OpenCode follows the
-current release. To pin a version, use ordinary npm syntax:
-`"@apshendev/unica-opencode@0.12.0"`.
+## Что делает адаптер
 
-OpenCode `1.18.22` or newer is required.
+- один раз добавляет упакованный каталог `skills/` в пути навыков; собственные
+  пути и удалённые URL навыков пользователя сохраняются;
+- берёт владение записью `mcp.unica`: значение `mcp.unica` заменяется
+  упакованным определением, поэтому устаревшая или несовместимая ручная запись
+  не помешает запуску упакованного сервера; остальные записи MCP-серверов
+  сохраняются;
+- запускает упакованный native bootstrap напрямую
+  (`unica-bootstrap run --plugin-root <корень пакета>`), который проверяет
+  закреплённый runtime (хеши архива и файлов) перед запуском `unica`.
 
-## What the adapter does on initialization
+Адаптер не оборачивает инструменты `unica.*` как нативные инструменты OpenCode и
+не добавляет других хуков.
 
-- Adds its packaged `skills/` directory to your skill paths **once**;
-  your own skill paths and remote skill URLs are preserved.
-- Takes ownership of the `mcp.unica` entry: the value present at
-  `mcp.unica` **is always replaced** by the packaged definition. A stale or
-  incompatible manual entry cannot keep the packaged server from starting.
-  Every other MCP server entry is preserved.
-- Starts the packaged native bootstrap directly
-  (`unica-bootstrap run --plugin-root <package root>`), which verifies the
-  pinned runtime (archive and file hashes) before launching `unica`.
+## Поддерживаемые платформы
 
-The adapter does not wrap `unica.*` tools as native OpenCode tools and does
-not add any other hooks.
+- Windows x64;
+- Linux x64 (best-effort совместимость).
 
-## Supported platforms
+macOS и прочие архитектуры получают явный отказ при инициализации вместо
+запуска неподходящего бинарника.
 
-- Windows x64
-- Linux x64 (best-effort compatibility)
+## Первый запуск и кеши
 
-macOS and other architectures fail clearly during initialization instead of
-launching a wrong binary.
+Первый запуск скачивает проверяемое ядро runtime — на медленном канале это
+может занять минуты. Таймаут старта MCP поднят до 15 минут, чтобы холодная
+установка не обрывалась на середине загрузки. Последующие запуски используют
+проверенный кеш и стартуют быстро.
 
-## First startup and caches
+Кеш runtime и состояние провайдера живут в области OpenCode вашего
+каталога кешей (`<cache>/opencode/unica/runtime` и
+`<cache>/opencode/unica/provider-state`), где `<cache>` — это
+`$XDG_CACHE_HOME` (или `%LOCALAPPDATA%` на Windows, или `~/.cache`).
+Переменные `UNICA_RUNTIME_CACHE_DIR` и `UNICA_PROVIDER_STATE_DIR` переопределяют
+эти адреса; уже заданные значения всегда имеют приоритет.
 
-The first start downloads the verified core runtime, which can take minutes
-on a slow link; the MCP startup timeout is raised to 15 minutes so a cold
-install is not killed mid-download. Later starts reuse the verified runtime
-cache and start quickly.
+## Лицензия
 
-Runtime cache and provider state live in an OpenCode-specific area of your
-cache home (`<cache>/opencode/unica/runtime` and
-`<cache>/opencode/unica/provider-state`), where `<cache>` is
-`$XDG_CACHE_HOME` (or `%LOCALAPPDATA%` on Windows, or `~/.cache`).
-Set `UNICA_RUNTIME_CACHE_DIR` or `UNICA_PROVIDER_STATE_DIR` in the
-environment to override these locations; existing values always win.
-
-## License
-
-LGPL-3.0-or-later, as Unica. See `LICENSE` and `ATTRIBUTIONS.md` inside the
-package.
+LGPL-3.0-or-later, как и Unica. См. `LICENSE` и `ATTRIBUTIONS.md` внутри пакета.
