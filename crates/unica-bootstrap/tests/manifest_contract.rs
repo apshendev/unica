@@ -345,19 +345,26 @@ fn the_core_is_still_required_to_arrive_as_an_archive() {
     assert!(error.to_string().contains("mediaType"), "{error}");
 }
 
+/// Сборка по умолчанию называет владельцем ядра upstream.
+const UPSTREAM_REPOSITORY: &str = "https://github.com/IngvarConsulting/unica";
+
 /// Сборка форка называет себя владельцем ядра: адреса и идентичность — форк.
 const FORK_REPOSITORY: &str = "https://github.com/apshendev/unica";
 
-fn fork_fixture() -> serde_json::Value {
+fn fixture_for_repository(repository: &str) -> serde_json::Value {
     let mut value = fixture();
-    value["source"]["repository"] = serde_json::json!(FORK_REPOSITORY);
-    value["release"]["repository"] = serde_json::json!(FORK_REPOSITORY);
+    value["source"]["repository"] = serde_json::json!(repository);
+    value["release"]["repository"] = serde_json::json!(repository);
     for target in ["darwin-arm64", "linux-x64", "win-x64"] {
         value["artifacts"]["unica"]["targets"][target]["asset"]["url"] = serde_json::json!(
-            format!("{FORK_REPOSITORY}/releases/download/v0.7.0/unica-runtime-{target}.tar.gz")
+            format!("{repository}/releases/download/v0.7.0/unica-runtime-{target}.tar.gz")
         );
     }
     value
+}
+
+fn fork_fixture() -> serde_json::Value {
+    fixture_for_repository(FORK_REPOSITORY)
 }
 
 #[test]
@@ -396,4 +403,28 @@ fn a_fork_build_still_takes_its_engines_from_the_toolchain() {
     parse(value)
         .validate_with_core_repository("0.7.0", FORK_REPOSITORY)
         .expect("the toolchain origin does not move with the core owner");
+}
+
+#[test]
+fn ordinary_validation_uses_the_repository_compiled_into_the_bootstrap() {
+    // Compile-time seam: сборка запекает UNICA_BOOTSTRAP_CORE_REPOSITORY в
+    // бинарь, и обычный validate следует именно запечённому владельцу, а не
+    // значению, подсунутому тестом в рантайме.
+    let compiled_repository =
+        option_env!("UNICA_BOOTSTRAP_CORE_REPOSITORY").unwrap_or(UPSTREAM_REPOSITORY);
+    let different_repository = if compiled_repository == UPSTREAM_REPOSITORY {
+        FORK_REPOSITORY
+    } else {
+        UPSTREAM_REPOSITORY
+    };
+
+    parse(fixture_for_repository(compiled_repository))
+        .validate("0.7.0")
+        .expect("the compiled repository is the accepted core owner");
+
+    let error = parse(fixture_for_repository(different_repository))
+        .validate("0.7.0")
+        .expect_err("a foreign core owner is refused");
+
+    assert!(error.to_string().contains("repository identity"), "{error}");
 }

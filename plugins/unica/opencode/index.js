@@ -25,6 +25,11 @@ const MCP_TIMEOUT_MS = 900000
 const RUNTIME_CACHE_ENV = "UNICA_RUNTIME_CACHE_DIR"
 const PROVIDER_STATE_ENV = "UNICA_PROVIDER_STATE_DIR"
 
+// Resolved while the module loads: an unsupported platform must refuse during
+// initialization, before any hook runs and before any configuration mutation.
+// Function declarations hoist, so calling hostTarget() here is valid.
+const HOST_TARGET = hostTarget()
+
 function toPosix(value) {
   return value.split("\\").join("/")
 }
@@ -89,7 +94,7 @@ function installSkills(config) {
 
 function installMcp(config) {
   const mcp = config.mcp ?? (config.mcp = {})
-  const { target, executable } = hostTarget()
+  const { target, executable } = HOST_TARGET
   const bootstrap = toPosix(
     path.join(PACKAGE_ROOT, "bootstrap", "bin", target, executable),
   )

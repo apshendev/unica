@@ -92,6 +92,63 @@ class VerifySkillsTests(unittest.TestCase):
         self.run_verify(["code-search", "format-profile", "release"])
 
 
+# OpenCode 1.18.22 печатает `opencode mcp list` clack-рамкой с ANSI-цветами.
+# Форма ниже записана с реального CLI (mcp-raw.txt / mcp-nocolor.txt):
+# рамка, подключённый `context7`, упавший `unica` и строки деталей взяты
+# без изменения; работающего опубликованного `unica` в записи нет, поэтому
+# его строку и команду упакованного bootstrap формирует тест.
+
+COLORED_HEADER = "\x1b[0m\r\n\x1b[90m┌\x1b[39m  MCP Servers\n\x1b[90m│\x1b[39m\n"
+
+PLAIN_HEADER = "\x1b[0m\r\n┌  MCP Servers\n│\n"
+
+WINDOWS_BOOTSTRAP_COMMAND = (
+    r"C:\consumer\node_modules\@apshendev\unica-opencode"
+    r"\bootstrap\bin\win-x64\unica-bootstrap.exe run --plugin-root "
+    r"C:\consumer\node_modules\@apshendev\unica-opencode"
+)
+
+LINUX_BOOTSTRAP_COMMAND = (
+    "/consumer/node_modules/@apshendev/unica-opencode"
+    "/bootstrap/bin/linux-x64/unica-bootstrap run --plugin-root "
+    "/consumer/node_modules/@apshendev/unica-opencode"
+)
+
+
+def colored_server(name: str, status: str, glyph: str) -> str:
+    return f"\x1b[34m●\x1b[39m  {glyph} {name} \x1b[90m{status}\n"
+
+
+def colored_detail(text: str, *, emphasized: bool = True) -> str:
+    inner = "\x1b[90m" if emphasized else ""
+    return f"\x1b[90m│\x1b[39m      {inner}{text}\n"
+
+
+def colored_separator() -> str:
+    return "\x1b[90m│\x1b[39m\n"
+
+
+def colored_footer(servers: int) -> str:
+    return f"\x1b[90m└\x1b[39m  {servers} server(s)\n\n"
+
+
+def plain_server(name: str, status: str, glyph: str) -> str:
+    return f"●  {glyph} {name} \x1b[90m{status}\n"
+
+
+def plain_detail(text: str, *, emphasized: bool = True) -> str:
+    inner = "\x1b[90m" if emphasized else ""
+    return f"│      {inner}{text}\n"
+
+
+def plain_separator() -> str:
+    return "│\n"
+
+
+def plain_footer(servers: int) -> str:
+    return f"└  {servers} server(s)\n\n"
+
+
 class VerifyMcpTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -107,26 +164,46 @@ class VerifyMcpTests(unittest.TestCase):
     def test_a_connected_unica_server_through_the_packaged_bootstrap_passes(
         self,
     ) -> None:
-        self.run_verify(
-            "MCP Servers\n"
-            "✓ unica connected\n"
-            "    unica-bootstrap run --plugin-root /consumer/pkg\n"
-            "1 server(s)\n"
-        )
+        for platform, command in (
+            ("windows", WINDOWS_BOOTSTRAP_COMMAND),
+            ("linux", LINUX_BOOTSTRAP_COMMAND),
+        ):
+            with self.subTest(platform=platform):
+                self.run_verify(
+                    COLORED_HEADER
+                    + colored_server("unica", "connected", "✓")
+                    + colored_detail(command)
+                    + colored_separator()
+                    + colored_footer(1)
+                )
 
     def test_a_unica_server_that_is_not_connected_fails(self) -> None:
         with self.assertRaises(SystemExit) as ctx:
             self.run_verify(
-                "MCP Servers\n"
-                "✗ unica failed\n"
-                "    unica-bootstrap run --plugin-root /consumer/pkg\n"
+                COLORED_HEADER
+                + colored_server("context7", "connected", "✓")
+                + colored_detail("https://mcp.context7.com/mcp")
+                + colored_separator()
+                + colored_server("unica", "failed", "✗")
+                + colored_detail(
+                    "MCP error -32000: Connection closed", emphasized=False
+                )
+                + colored_detail("cmd /c echo hello")
+                + colored_separator()
+                + colored_footer(2)
             )
 
-        self.assertIn("unica", str(ctx.exception))
+        self.assertIn("not connected", str(ctx.exception))
 
     def test_a_unica_line_without_the_packaged_bootstrap_fails(self) -> None:
         with self.assertRaises(SystemExit) as ctx:
-            self.run_verify("✓ unica connected\n    npx something-else\n")
+            self.run_verify(
+                COLORED_HEADER
+                + colored_server("unica", "connected", "✓")
+                + colored_detail("npx something-else")
+                + colored_separator()
+                + colored_footer(1)
+            )
 
         self.assertIn("bootstrap", str(ctx.exception))
 
@@ -135,19 +212,61 @@ class VerifyMcpTests(unittest.TestCase):
         # назван в блоке другого сервера, а unica подключена без него.
         with self.assertRaises(SystemExit) as ctx:
             self.run_verify(
-                "MCP Servers\n"
-                "✓ unica connected\n"
-                "✓ replica connected\n"
-                "    unica-bootstrap run --plugin-root /other/package\n"
+                COLORED_HEADER
+                + colored_server("unica", "connected", "✓")
+                + colored_detail("https://unica.example/mcp")
+                + colored_separator()
+                + colored_server("replica", "connected", "✓")
+                + colored_detail("unica-bootstrap run --plugin-root /other/package")
+                + colored_separator()
+                + colored_footer(2)
             )
 
         self.assertIn("bootstrap", str(ctx.exception))
 
     def test_a_listing_without_unica_fails(self) -> None:
         with self.assertRaises(SystemExit) as ctx:
-            self.run_verify("✓ other-server connected\n    npx -y @example/server\n")
+            self.run_verify(
+                COLORED_HEADER
+                + colored_server("context7", "connected", "✓")
+                + colored_detail("https://mcp.context7.com/mcp")
+                + colored_separator()
+                + colored_footer(1)
+            )
 
-        self.assertIn("unica", str(ctx.exception))
+        self.assertIn("does not mention the unica server", str(ctx.exception))
+
+    def test_no_color_output_is_still_parsed(self) -> None:
+        # NO_COLOR=1 снимает цвет с глифов рамки, но ANSI на статусе и
+        # деталях остаётся — форма из записи mcp-nocolor.txt.
+        self.run_verify(
+            PLAIN_HEADER
+            + plain_server("unica", "connected", "✓")
+            + plain_detail(WINDOWS_BOOTSTRAP_COMMAND)
+            + plain_separator()
+            + plain_footer(1)
+        )
+
+    def test_exact_server_name_match(self) -> None:
+        # `unica-backup` — другой сервер с полноценным connected-блоком и
+        # своей bootstrap-деталью: точного сервера `unica` в листинге нет,
+        # и проверка обязана отказаться от такого вывода.
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(
+                COLORED_HEADER
+                + colored_server("unica-backup", "connected", "✓")
+                + colored_detail(WINDOWS_BOOTSTRAP_COMMAND)
+                + colored_separator()
+                + colored_footer(1)
+            )
+
+        self.assertIn("does not mention the unica server", str(ctx.exception))
+
+    def test_a_listing_without_a_server_frame_fails_closed(self) -> None:
+        for listing, text in (("empty", ""), ("garbage", "not an opencode listing\n")):
+            with self.subTest(listing=listing):
+                with self.assertRaises(SystemExit):
+                    self.run_verify(text)
 
 
 if __name__ == "__main__":

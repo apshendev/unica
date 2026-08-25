@@ -231,21 +231,35 @@ class OpenCodeAdapterConfigTests(unittest.TestCase):
             ("linux", "arm64"),
             ("win32", "arm64"),
         )
+        preexisting = {
+            "skills": {"paths": ["~/team"], "urls": ["https://example.com/s/"]},
+            "mcp": {
+                "other-server": {
+                    "type": "local",
+                    "command": ["npx", "-y", "@example/server"],
+                    "enabled": True,
+                }
+            },
+        }
         for platform, arch in combinations:
-            with self.subTest(platform=platform, arch=arch):
-                report = run_adapter(
-                    {
-                        "adapterPath": str(ADAPTER_PATH),
-                        "config": {},
-                        "platform": platform,
-                        "arch": arch,
-                    }
-                )
+            for label, config in (("empty", {}), ("preexisting", preexisting)):
+                with self.subTest(platform=platform, arch=arch, config=label):
+                    report = run_adapter(
+                        {
+                            "adapterPath": str(ADAPTER_PATH),
+                            "config": config,
+                            "platform": platform,
+                            "arch": arch,
+                        }
+                    )
 
-                self.assertFalse(report["ok"], report)
-                self.assertIn("Windows x64", report["error"])
-                self.assertIn("Linux x64", report["error"])
-                self.assertIn(f"{platform}-{arch}", report["error"])
+                    self.assertFalse(report["ok"], report)
+                    self.assertIn("Windows x64", report["error"])
+                    self.assertIn("Linux x64", report["error"])
+                    self.assertIn(f"{platform}-{arch}", report["error"])
+                    # Initialization refusal must not leave partial mutations:
+                    # the configuration object is byte-for-byte what it was.
+                    self.assertEqual(report["config"], config)
 
 
 if __name__ == "__main__":

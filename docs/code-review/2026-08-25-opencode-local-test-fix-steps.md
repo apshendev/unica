@@ -64,6 +64,8 @@
 bootstrap» или «does not mention the unica server» — это воспроизведение
 дефекта.
 
+> [2026-08-25 11:33] Выполнено: фикстуры переписаны под записанные байты; красный прогон дал 4 ожидаемых падения (positive windows/linux, no_color, exact_server_name_match).
+
 ### 1.2. Зелёный: `scripts/ci/smoke-opencode-consumer.py`, только `verify_mcp`
 
 - добавить в начало модуля `import re` (сейчас он не импортирован), затем
@@ -83,6 +85,8 @@ bootstrap» или «does not mention the unica server» — это воспро
 
 Запуск повторно — зелёный. Затем
 `python -m py_compile scripts/ci/smoke-opencode-consumer.py`.
+
+> [2026-08-25 11:33] Выполнено: `verify_mcp` переписан (ANSI CSI/OSC-очистка, классификация `●`/`│`/`┌`/`└`, точное имя, fail closed); 12/12 тестов зелёные, `py_compile` без ошибок.
 
 ---
 
@@ -109,6 +113,8 @@ bootstrap» или «does not mention the unica server» — это воспро
 `skills.paths` (и `installMcp` успевает создать `config.mcp = {}` для `{}`
 до броска `hostTarget()`) — тест красный.
 
+> [2026-08-25 11:38] Выполнено: драйвер возвращает `config` при ошибке; тест прогоняет `{}` и заполненный конфиг для всех 4 пар; красный прогон дал 8 падений с ожидаемыми мутациями.
+
 ### 2.2. Зелёный: `plugins/unica/opencode/index.js`
 
 - в области модульных констант: `const HOST_TARGET = hostTarget()` (объявление
@@ -121,6 +127,8 @@ bootstrap» или «does not mention the unica server» — это воспро
 
 Повторный запуск — зелёный (в т.ч. все существующие позитивные тесты, т.к.
 драйвер ставит `process.platform/arch` до `import`).
+
+> [2026-08-25 11:38] Выполнено: `const HOST_TARGET = hostTarget()` вычисляется при загрузке модуля, `installMcp` использует константу; 10/10 тестов зелёные.
 
 ---
 
@@ -156,6 +164,8 @@ Rust-теста здесь нет — это новое доказательст
 отсутствующее включение этого доказательства в CI воспроизводит красный
 workflow-тест следующего пункта.
 
+> [2026-08-25 11:47] Выполнено: добавлены `UPSTREAM_REPOSITORY`, `fixture_for_repository`, `fork_fixture` делегирует хелперу; новый тест зелёный без переменной (23/23) и с форк-переменной (1/1).
+
 ### 3.2. Workflow: `.github/workflows/unica-plugin-release.yml`
 
 В job `build-tools`, только `matrix.target == 'linux-x64'`, отдельный шаг после
@@ -173,6 +183,8 @@ workflow-тест следующего пункта.
 Шаг использует дефолтный `target/` (не кешируется в этом job), поэтому тестовый
 бинарь компилируется уже с нужной переменной. Публикационные jobs не трогать.
 
+> [2026-08-25 11:55] Выполнено: шаг добавлен в `build-tools` после сборки, строго `matrix.target == 'linux-x64'`; публикационные jobs не тронуты.
+
 ### 3.3. Красный, затем фиксация в `tests/ci/test_unica_workflow.py`
 
 Сначала написать утверждение (шага в YAML ещё нет → красный): в блоке
@@ -180,6 +192,8 @@ workflow-тест следующего пункта.
 `--exact`, имя теста-цель, shell-префикс
 `UNICA_BOOTSTRAP_CORE_REPOSITORY="$CORE_RELEASE_REPOSITORY"`, и шаг ограничен
 `matrix.target == 'linux-x64'`. Потом добавить шаг в YAML → зелёный.
+
+> [2026-08-25 11:55] Выполнено: `test_the_bootstrap_proves_its_compiled_core_repository` красный (0 шагов) → после правки YAML зелёный; весь `test_unica_workflow` 41/41.
 
 ### 3.4. Локальная проверка форка (PowerShell)
 
@@ -189,6 +203,8 @@ cargo test -p unica-bootstrap --test manifest_contract ordinary_validation_uses_
 Remove-Item Env:UNICA_BOOTSTRAP_CORE_REPOSITORY
 cargo test -p unica-bootstrap --test manifest_contract   # default-ветка теста
 ```
+
+> [2026-08-25 11:55] Выполнено: с форк-переменной — 1 passed; после удаления переменной полный прогон `manifest_contract` — 23 passed.
 
 ---
 

@@ -216,6 +216,12 @@ jobs:
           --work-dir .build/tool-work
           --metrics-file ".build/cargo-metrics/${{ matrix.target }}.json"
           --core-release-repository "$CORE_RELEASE_REPOSITORY"
+      - name: Prove the compiled bootstrap honors the named core repository
+        if: matrix.target == 'linux-x64'
+        run: >
+          UNICA_BOOTSTRAP_CORE_REPOSITORY="$CORE_RELEASE_REPOSITORY"
+          cargo test -p unica-bootstrap --test manifest_contract
+          ordinary_validation_uses_the_repository_compiled_into_the_bootstrap -- --exact
       - name: Build, install, and verify local development on Windows
         if: matrix.target == 'win-x64'
         shell: bash

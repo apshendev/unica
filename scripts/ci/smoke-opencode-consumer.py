@@ -15,8 +15,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
+
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+_ANSI_OSC = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
+_SERVER_LINE = re.compile(
+    r"^●\s+[○✓✗]\s+(?P<name>\S+)\s+(?P<status>connected|disabled|failed)$"
+)
 
 
 def packaged_skill_names(plugin_root: Path) -> set[str]:
@@ -59,33 +66,54 @@ def verify_skills(json_path: Path, plugin_root: Path) -> None:
         )
 
 
+def _strip_ansi(line: str) -> str:
+    line = _ANSI_OSC.sub("", line)
+    line = _ANSI.sub("", line)
+    return line.replace("\r", "")
+
+
 def verify_mcp(output_path: Path) -> None:
     try:
         text = output_path.read_text(encoding="utf-8")
     except OSError as error:
         raise SystemExit(f"consumer mcp listing is unreadable: {error}") from error
-    # `opencode mcp list` печатает каждый сервер блоком: строка состояния и
-    # отступы с деталями команды. Владение bootstrap проверяется внутри блока
-    # unica, а не по всему выводу.
-    blocks: list[list[str]] = []
-    for line in text.splitlines():
-        if not line.strip():
+    # `opencode mcp list` печатает clack-рамку: `●` открывает запись сервера,
+    # `│` продолжает её деталями, `┌`/`└` — границы списка. Владение
+    # bootstrap проверяется внутри записи unica, а не по всему выводу.
+    records: list[tuple[str, str, list[str]]] = []
+    for raw_line in text.splitlines():
+        line = _strip_ansi(raw_line).strip()
+        if not line:
             continue
-        if line[:1] in (" ", "\t"):
-            if blocks:
-                blocks[-1].append(line)
+        marker = line[0]
+        if marker in "┌└":
+            continue
+        if marker == "●":
+            match = _SERVER_LINE.match(line)
+            if match is None:
+                raise SystemExit(f"unparsable mcp server line: {line}")
+            records.append((match.group("name"), match.group("status"), []))
+        elif marker == "│":
+            detail = line[1:].strip()
+            if not detail:
+                continue
+            if not records:
+                raise SystemExit(f"mcp detail line before any server: {line}")
+            records[-1][2].append(detail)
         else:
-            blocks.append([line])
-    unica_blocks = [block for block in blocks if "unica" in block[0]]
-    if not unica_blocks:
+            raise SystemExit(f"unexpected line in mcp listing: {line}")
+    if not records:
+        raise SystemExit("mcp listing carries no server records at all")
+    unica_records = [record for record in records if record[0] == "unica"]
+    if not unica_records:
         raise SystemExit("mcp listing does not mention the unica server at all")
-    connected = [block for block in unica_blocks if "connected" in block[0]]
+    connected = [record for record in unica_records if record[1] == "connected"]
     if not connected:
         raise SystemExit(
             "unica server is not connected in the consumer: "
-            + " | ".join(block[0].strip() for block in unica_blocks)
+            + " | ".join(f"{name} {status}" for name, status, _ in unica_records)
         )
-    if not any("unica-bootstrap" in "\n".join(block) for block in connected):
+    if not any("unica-bootstrap" in "\n".join(details) for _, _, details in connected):
         raise SystemExit(
             "unica server is not launched through the packaged bootstrap: "
             "no unica-bootstrap command in the unica entry"

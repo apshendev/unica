@@ -19,7 +19,9 @@
 //   }
 //
 // Output on stdout: {"ok": true, "hooks": [...], "exports": [...], "config": {...}}
-// or {"ok": false, "error": "message"}.
+// or {"ok": false, "error": "message", "config": {...}} — the configuration is
+// reported even when import or initialization failed, because the hook mutates
+// the object in place and the caller must see any partial mutation.
 
 import { readFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
@@ -60,6 +62,10 @@ const report = await (async () => {
     hooks: Object.keys(hooks),
     config: instruction.config,
   }
-})().catch((error) => ({ ok: false, error: String(error?.message ?? error) }))
+})().catch((error) => ({
+  ok: false,
+  error: String(error?.message ?? error),
+  config: instruction.config,
+}))
 
 process.stdout.write(JSON.stringify(report))
