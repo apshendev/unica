@@ -1,10 +1,11 @@
 ---
 id: INV.PKG.NPM-PUBLICATION-GATE
-status: active
+status: superseded
 governs: product
 decision: DEC.2026-08-25.NPM-TRUSTED-PUBLICATION
 check: tests/ci/test_unica_workflow.py::test_opencode_npm_publication_is_fork_gated_and_trusted
 scope: [pkg, ci]
+superseded-by: [INV.PKG.NPM-PUBLICATION-FORK-TAG-OIDC, INV.CI.NPM-FORK-ONLY-CONTOUR, INV.PKG.NPM-STAGING-DIST-TAG]
 ---
 
 # npm-выпуск идёт только из тегового пуша форка через OIDC

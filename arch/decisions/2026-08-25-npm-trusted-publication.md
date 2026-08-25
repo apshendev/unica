@@ -1,10 +1,10 @@
 ---
 id: DEC.2026-08-25.NPM-TRUSTED-PUBLICATION
-status: active
+status: superseded
 governs: product
 realized: tests/ci/test_unica_workflow.py::test_opencode_npm_publication_is_fork_gated_and_trusted
 supersedes: []
-superseded-by: null
+superseded-by: DEC.2026-08-25.NPM-DIST-TAG-PROMOTION
 establishes: [INV.PKG.NPM-PUBLICATION-GATE, INV.PKG.NPM-RERUN-INTEGRITY]
 design: docs/design/2026-08-25-npm-trusted-publication-design.md
 ---

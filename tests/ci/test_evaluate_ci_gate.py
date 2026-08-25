@@ -5,7 +5,9 @@ import unittest
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).resolve().parents[2] / "scripts" / "ci" / "evaluate-ci-gate.py"
+MODULE_PATH = (
+    Path(__file__).resolve().parents[2] / "scripts" / "ci" / "evaluate-ci-gate.py"
+)
 
 
 def load_gate_module():
@@ -41,6 +43,7 @@ PUBLISH_SKIPPED = {
     "publish-opencode-npm": "skipped",
     "smoke-opencode-windows": "skipped",
     "smoke-opencode-linux": "skipped",
+    "promote-opencode-npm": "skipped",
 }
 
 
@@ -68,13 +71,19 @@ class EvaluateCiGateTests(unittest.TestCase):
         outputs = classification(plugin_content_changed=True)
         results = source_results()
 
-        evaluation = module.evaluate_gate("pull_request", "refs/pull/155/merge", outputs, results)
+        evaluation = module.evaluate_gate(
+            "pull_request", "refs/pull/155/merge", outputs, results
+        )
 
         self.assertTrue(evaluation.ok)
         self.assertEqual("source", evaluation.contour)
-        self.assertEqual(set(results) - set(ALWAYS_SUCCESS), set(evaluation.skipped_jobs))
+        self.assertEqual(
+            set(results) - set(ALWAYS_SUCCESS), set(evaluation.skipped_jobs)
+        )
 
-    def test_platform_independent_rust_uses_primary_macos_and_package_pipeline(self) -> None:
+    def test_platform_independent_rust_uses_primary_macos_and_package_pipeline(
+        self,
+    ) -> None:
         module = load_gate_module()
         outputs = classification(rust_changed=True, release_required=True)
         results = {
@@ -84,7 +93,9 @@ class EvaluateCiGateTests(unittest.TestCase):
             "probe-thin-bootstrap": "success",
         }
 
-        evaluation = module.evaluate_gate("pull_request", "refs/pull/155/merge", outputs, results)
+        evaluation = module.evaluate_gate(
+            "pull_request", "refs/pull/155/merge", outputs, results
+        )
 
         self.assertTrue(evaluation.ok)
         self.assertEqual("rust", evaluation.contour)
@@ -92,7 +103,9 @@ class EvaluateCiGateTests(unittest.TestCase):
 
     def test_platform_rust_uses_full_matrix_instead_of_primary_job(self) -> None:
         module = load_gate_module()
-        outputs = classification(rust_changed=True, platform_changed=True, release_required=True)
+        outputs = classification(
+            rust_changed=True, platform_changed=True, release_required=True
+        )
         results = {
             **source_results(),
             "test-rust-platforms": "success",
@@ -100,7 +113,9 @@ class EvaluateCiGateTests(unittest.TestCase):
             "probe-thin-bootstrap": "success",
         }
 
-        evaluation = module.evaluate_gate("pull_request", "refs/pull/155/merge", outputs, results)
+        evaluation = module.evaluate_gate(
+            "pull_request", "refs/pull/155/merge", outputs, results
+        )
 
         self.assertTrue(evaluation.ok)
         self.assertEqual("platform", evaluation.contour)
@@ -134,7 +149,9 @@ class EvaluateCiGateTests(unittest.TestCase):
         self.assertTrue(affected.ok)
         self.assertEqual("success", affected.expected["release-assessment"])
 
-    def test_ci_full_pr_runs_all_validation_and_package_jobs_without_publication(self) -> None:
+    def test_ci_full_pr_runs_all_validation_and_package_jobs_without_publication(
+        self,
+    ) -> None:
         module = load_gate_module()
         outputs = classification(**{name: True for name in OUTPUT_NAMES})
         results = {
@@ -146,11 +163,15 @@ class EvaluateCiGateTests(unittest.TestCase):
             "probe-thin-bootstrap": "success",
         }
 
-        evaluation = module.evaluate_gate("pull_request", "refs/pull/155/merge", outputs, results)
+        evaluation = module.evaluate_gate(
+            "pull_request", "refs/pull/155/merge", outputs, results
+        )
 
         self.assertTrue(evaluation.ok)
         self.assertEqual("full", evaluation.contour)
-        self.assertEqual({"test-rust-primary", *PUBLISH_SKIPPED}, set(evaluation.skipped_jobs))
+        self.assertEqual(
+            {"test-rust-primary", *PUBLISH_SKIPPED}, set(evaluation.skipped_jobs)
+        )
 
     def test_ci_change_requires_the_search_integration_job(self) -> None:
         module = load_gate_module()
@@ -191,9 +212,12 @@ class EvaluateCiGateTests(unittest.TestCase):
             "publish-opencode-npm": "success",
             "smoke-opencode-windows": "success",
             "smoke-opencode-linux": "success",
+            "promote-opencode-npm": "success",
         }
 
-        manual_evaluation = module.evaluate_gate("workflow_dispatch", "refs/heads/main", outputs, manual)
+        manual_evaluation = module.evaluate_gate(
+            "workflow_dispatch", "refs/heads/main", outputs, manual
+        )
         tag_evaluation = module.evaluate_gate(
             "push", "refs/tags/v0.9.1", outputs, tag, repository="apshendev/unica"
         )
@@ -218,27 +242,49 @@ class EvaluateCiGateTests(unittest.TestCase):
             "publish-opencode-npm": "skipped",
             "smoke-opencode-windows": "skipped",
             "smoke-opencode-linux": "skipped",
+            "promote-opencode-npm": "skipped",
         }
-        fork_results = {**upstream_results, "publish-opencode-npm": "failure"}
+        fork_results = {
+            **upstream_results,
+            "publish-opencode-npm": "failure",
+            "promote-opencode-npm": "failure",
+        }
 
         upstream = module.evaluate_gate(
-            "push", "refs/tags/v0.9.1", outputs, upstream_results,
+            "push",
+            "refs/tags/v0.9.1",
+            outputs,
+            upstream_results,
             repository="IngvarConsulting/unica",
         )
         fork = module.evaluate_gate(
-            "push", "refs/tags/v0.9.1", outputs, fork_results,
+            "push",
+            "refs/tags/v0.9.1",
+            outputs,
+            fork_results,
             repository="apshendev/unica",
         )
 
         self.assertTrue(upstream.ok)
-        for job in ("publish-opencode-npm", "smoke-opencode-windows", "smoke-opencode-linux"):
+        for job in (
+            "publish-opencode-npm",
+            "smoke-opencode-windows",
+            "smoke-opencode-linux",
+            "promote-opencode-npm",
+        ):
             self.assertEqual("skipped", upstream.expected[job], job)
+        # Теговый прогон форка ждёт от promotion успех: его падение —
+        # красный выпуск, а не молчаливый best effort.
+        self.assertEqual("success", fork.expected["promote-opencode-npm"])
         self.assertFalse(fork.ok)
         self.assertIn("publish-opencode-npm", fork.unexpected)
         self.assertIn("smoke-opencode-windows", fork.unexpected)
         self.assertIn("smoke-opencode-linux", fork.unexpected)
+        self.assertIn("promote-opencode-npm", fork.unexpected)
 
-    def test_manual_dispatch_on_tag_ref_remains_non_publishing_full_contour(self) -> None:
+    def test_manual_dispatch_on_tag_ref_remains_non_publishing_full_contour(
+        self,
+    ) -> None:
         module = load_gate_module()
         outputs = classification(**{name: True for name in OUTPUT_NAMES})
         results = {
@@ -292,7 +338,9 @@ class EvaluateCiGateTests(unittest.TestCase):
             "probe-thin-bootstrap": "success",
         }
 
-        evaluation = module.evaluate_gate("pull_request", "refs/pull/155/merge", outputs, results)
+        evaluation = module.evaluate_gate(
+            "pull_request", "refs/pull/155/merge", outputs, results
+        )
 
         self.assertFalse(evaluation.ok)
         self.assertEqual(
@@ -301,7 +349,11 @@ class EvaluateCiGateTests(unittest.TestCase):
                 "test-rust-platforms": ("failure", "success"),
                 "package-thin": ("skipped", "success"),
             },
-            {key: value for key, value in evaluation.unexpected.items() if key != "classification"},
+            {
+                key: value
+                for key, value in evaluation.unexpected.items()
+                if key != "classification"
+            },
         )
 
     def test_summary_reports_classification_results_and_skipped_jobs(self) -> None:
@@ -313,7 +365,9 @@ class EvaluateCiGateTests(unittest.TestCase):
             **PACKAGE_SUCCESS,
             "probe-thin-bootstrap": "success",
         }
-        evaluation = module.evaluate_gate("pull_request", "refs/pull/155/merge", outputs, results)
+        evaluation = module.evaluate_gate(
+            "pull_request", "refs/pull/155/merge", outputs, results
+        )
 
         summary = module.render_summary(evaluation)
 

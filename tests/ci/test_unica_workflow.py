@@ -94,13 +94,17 @@ def parse_workflow_jobs(workflow: str) -> dict[str, ParsedJob]:
                 continue
             raw = match.group(1).strip()
             if raw.startswith("["):
-                needs.extend(item.strip() for item in raw[1:-1].split(",") if item.strip())
+                needs.extend(
+                    item.strip() for item in raw[1:-1].split(",") if item.strip()
+                )
             elif raw:
                 needs.append(raw)
             else:
                 cursor = index + 1
                 while cursor < len(block_lines):
-                    item = re.fullmatch(r"      - ([A-Za-z0-9_-]+)", block_lines[cursor])
+                    item = re.fullmatch(
+                        r"      - ([A-Za-z0-9_-]+)", block_lines[cursor]
+                    )
                     if item is None:
                         break
                     needs.append(item.group(1))
@@ -114,11 +118,13 @@ def parse_workflow_jobs(workflow: str) -> dict[str, ParsedJob]:
             )
         )
         steps = tuple(
-            match.group(1).strip('"\'')
+            match.group(1).strip("\"'")
             for line in block_lines
             if (match := re.fullmatch(r"      - (?:name|uses): (.+)", line))
         )
-        jobs[name] = ParsedJob(body=body, needs=tuple(needs), targets=targets, steps=steps)
+        jobs[name] = ParsedJob(
+            body=body, needs=tuple(needs), targets=targets, steps=steps
+        )
     return jobs
 
 
@@ -132,7 +138,9 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
     def test_source_gate_checks_the_full_rust_and_python_workspace(self) -> None:
         text = self.release_text()
 
-        self.assertIn("cargo clippy --workspace --all-targets --all-features -- -D warnings", text)
+        self.assertIn(
+            "cargo clippy --workspace --all-targets --all-features -- -D warnings", text
+        )
         self.assertIn("cargo test --workspace -- --test-threads=1", text)
         self.assertIn("python -m unittest discover -s tests/ci --durations 20", text)
         self.assertIn("python -m unittest discover -s tests/dev --durations 20", text)
@@ -167,6 +175,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             "publish-opencode-npm",
             "smoke-opencode-windows",
             "smoke-opencode-linux",
+            "promote-opencode-npm",
         ):
             with self.subTest(upstream=upstream):
                 self.assertIn(f"      - {upstream}", gate)
@@ -188,7 +197,9 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         ):
             with self.subTest(output=output):
                 self.assertIn(f"      {output}:", classifier)
-        self.assertIn("contains(github.event.pull_request.labels.*.name, 'ci:full')", classifier)
+        self.assertIn(
+            "contains(github.event.pull_request.labels.*.name, 'ci:full')", classifier
+        )
         self.assertIn("--force-full", classifier)
 
     def test_classifier_preserves_merge_base_for_triple_dot_diff(self) -> None:
@@ -229,7 +240,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
                     self.assertIsNone(
                         context,
                         f"{context} is interpolated into a run block; bind it "
-                        "to an env variable and read it as \"$NAME\"",
+                        'to an env variable and read it as "$NAME"',
                     )
 
         # An indentation scanner that silently matched nothing would pass this
@@ -246,7 +257,9 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertNotIn("cargo test", source)
         self.assertIn("search_integration_changed == 'true'", search_integration)
         self.assertIn("ci_changed == 'true'", search_integration)
-        self.assertIn("--test issue_89_workspace_service -- --ignored", search_integration)
+        self.assertIn(
+            "--test issue_89_workspace_service -- --ignored", search_integration
+        )
         self.assertNotIn("dtolnay/rust-toolchain", source)
         self.assertIn("runs-on: macos-14", primary)
         self.assertIn("rust_changed == 'true'", primary)
@@ -300,7 +313,11 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')",
             thin,
         )
-        for job_id in ("publish-release-assets", "smoke-thin-plugin", "verify-published-assets"):
+        for job_id in (
+            "publish-release-assets",
+            "smoke-thin-plugin",
+            "verify-published-assets",
+        ):
             with self.subTest(job_id=job_id):
                 job = job_block(text, job_id)
                 self.assertIn("github.event_name == 'push'", job)
@@ -320,6 +337,10 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             "verify-published-assets": (
                 "needs.package-thin.result == 'success'",
                 "needs.publish-release-assets.result == 'success'",
+            ),
+            "promote-opencode-npm": (
+                "needs.publish-opencode-npm.result == 'success'",
+                "needs.smoke-opencode-windows.result == 'success'",
             ),
         }
 
@@ -371,6 +392,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             "publish-opencode-npm": 15,
             "smoke-opencode-windows": 40,
             "smoke-opencode-linux": 40,
+            "promote-opencode-npm": 10,
             "unica-ci": 5,
         }
         for job_id, minutes in expected_release_timeouts.items():
@@ -410,7 +432,10 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             build,
         )
         self.assertNotIn("restore-keys:", build)
-        self.assertLess(build.index("id: cargo-cache"), build.index("scripts/ci/build-unica-tools.py"))
+        self.assertLess(
+            build.index("id: cargo-cache"),
+            build.index("scripts/ci/build-unica-tools.py"),
+        )
         self.assertIn("--metrics-file", build)
         self.assertIn("if: always()", build)
         self.assertIn("steps.cargo-cache.outcome", build)
@@ -472,7 +497,9 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             build,
         )
         self.assertIn('--plugin-root "$runtime_root"', build)
-        self.assertIn('executable="$runtime_root/bin/${{ matrix.target }}/unica"', build)
+        self.assertIn(
+            'executable="$runtime_root/bin/${{ matrix.target }}/unica"', build
+        )
         self.assertIn("timeout-minutes: 3", smoke_step)
         self.assertIn("--total-timeout-seconds 120", smoke_step)
 
@@ -522,7 +549,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertIn("Probe packaged bootstrap through the downloader", probe)
         self.assertIn("Smoke packaged bootstrap against published runtime", smoke)
         self.assertIn("scripts/ci/smoke-unica-bootstrap.py", smoke)
-        self.assertIn(' --plugin-root .build/thin/plugins/unica', smoke)
+        self.assertIn(" --plugin-root .build/thin/plugins/unica", smoke)
         self.assertIn(' --target "${{ matrix.target }}"', smoke)
         self.assertIn("needs: package-thin", probe)
         self.assertIn("needs: [package-thin, publish-release-assets]", smoke)
@@ -543,7 +570,9 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertNotIn(marker, release)
 
-    def test_source_repo_has_no_manual_or_scheduled_full_migration_workflow(self) -> None:
+    def test_source_repo_has_no_manual_or_scheduled_full_migration_workflow(
+        self,
+    ) -> None:
         release = self.release_text()
         violations: dict[str, list[str]] = {}
         workflows = sorted(
@@ -563,11 +592,19 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
 
         self.assertFalse(LEGACY_WORKFLOW.exists())
         self.assertNotIn("unica-legacy-migration.yml", release)
-        self.assertEqual({}, violations, f"source workflows own full migration policy: {violations}")
+        self.assertEqual(
+            {}, violations, f"source workflows own full migration policy: {violations}"
+        )
 
-    def test_release_assets_are_published_without_pages_dependency_and_redownloaded(self) -> None:
+    def test_release_assets_are_published_without_pages_dependency_and_redownloaded(
+        self,
+    ) -> None:
         text = self.release_text()
-        publish = text[text.index("  publish-release-assets:") : text.index("  verify-published-assets:")]
+        publish = text[
+            text.index("  publish-release-assets:") : text.index(
+                "  verify-published-assets:"
+            )
+        ]
         verify = text[text.index("  verify-published-assets:") :]
 
         self.assertNotIn("publish-assessment-pages", publish)
@@ -581,7 +618,9 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
 
     def test_release_notes_are_generated_without_repository_docs(self) -> None:
         text = self.release_text()
-        publish = text[text.index("  publish-release-assets:") : text.index("  smoke-thin-plugin:")]
+        publish = text[
+            text.index("  publish-release-assets:") : text.index("  smoke-thin-plugin:")
+        ]
 
         self.assertIn("generate_release_notes: true", publish)
         self.assertNotIn("body_path:", publish)
@@ -589,14 +628,22 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
 
     def test_assessment_is_independent_from_runtime_publication(self) -> None:
         text = self.release_text()
-        assessment = text[text.index("  release-assessment:") : text.index("  publish-release-assets:")]
+        assessment = text[
+            text.index("  release-assessment:") : text.index(
+                "  publish-release-assets:"
+            )
+        ]
 
         self.assertIn("always()", assessment)
         self.assertIn("unica-runtime-linux-x64.tar.gz", assessment)
         self.assertNotIn("publish-release-assets", assessment)
-        self.assertIn("if: always()", text[text.index("name: unica-release-assessment") - 120 :])
+        self.assertIn(
+            "if: always()", text[text.index("name: unica-release-assessment") - 120 :]
+        )
 
-    def test_pr_permissions_are_read_only_and_cross_repo_write_uses_secret(self) -> None:
+    def test_pr_permissions_are_read_only_and_cross_repo_write_uses_secret(
+        self,
+    ) -> None:
         release = self.release_text()
         publish = self.publish_text()
 
@@ -661,11 +708,12 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertIn("if: matrix.target == 'linux-x64'", step)
 
     def test_opencode_npm_publication_is_fork_gated_and_trusted(self) -> None:
-        """npm-выпуск — только теговый пуш форка, после проверенных ассетов.
+        """npm-этапирование — только теговый пуш форка, после проверенных ассетов.
 
-        Публикация идёт короткоживущим OIDC-токеном trusted publishing:
-        долгоживущий npm-токен в репозитории не появляется
-        (INV.PKG.NPM-PUBLICATION-GATE).
+        Стадия публикует кандидата короткоживущим OIDC-токеном trusted
+        publishing под служебным dist-tag: долгоживущий npm-токен у publish
+        job не появляется (INV.PKG.NPM-PUBLICATION-FORK-TAG-OIDC).
+        Перемещение `latest`/`next` выполняет отдельный promotion job.
         """
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
         block = job_block(workflow, "publish-opencode-npm")
@@ -681,32 +729,39 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertIn("package-unica-opencode.py", block)
         self.assertIn("publish-unica-opencode.py", block)
         self.assertNotIn("NODE_AUTH_TOKEN", block)
+        self.assertNotIn("NPM_PROMOTION_TOKEN", block)
         self.assertNotIn("secrets.", block)
+        # Promotion — отдельная работа: публикация не двигает dist-tag.
+        self.assertTrue(
+            job_block(workflow, "promote-opencode-npm"),
+            "job promote-opencode-npm not found",
+        )
         # Литерал владельца одинаков в workflow, скрипте публикации и гейте.
         publish_script = (
             REPO_ROOT / "scripts" / "ci" / "publish-unica-opencode.py"
         ).read_text(encoding="utf-8")
-        gate_script = (
-            REPO_ROOT / "scripts" / "ci" / "evaluate-ci-gate.py"
-        ).read_text(encoding="utf-8")
+        gate_script = (REPO_ROOT / "scripts" / "ci" / "evaluate-ci-gate.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('FORK_REPOSITORY = "apshendev/unica"', publish_script)
         self.assertIn('FORK_REPOSITORY = "apshendev/unica"', gate_script)
 
     def test_opencode_consumer_smoke_gates_the_release(self) -> None:
-        """Реальный потребитель пола 1.18.22 проверяет публикацию npm.
+        """Реальный потребитель пола 1.18.22 проверяет npm-кандидата.
 
         Windows x64 — блокирующий: без него выпуск не зелёный. Linux x64 —
         best effort: `continue-on-error`, но его падение видно в отчёте.
         OpenCode-потребителя под macOS нет, а существующие Codex/Claude
-        проверки macOS не тронуты (INV.CI.OPENCODE-CONSUMER-SMOKE).
+        проверки macOS не тронуты. Обе подкоманды верификатора получают
+        установленный root пакета и target.
         """
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
         windows = job_block(workflow, "smoke-opencode-windows")
         linux = job_block(workflow, "smoke-opencode-linux")
 
-        for job_id, block in (
-            ("smoke-opencode-windows", windows),
-            ("smoke-opencode-linux", linux),
+        for job_id, block, target in (
+            ("smoke-opencode-windows", windows, "win-x64"),
+            ("smoke-opencode-linux", linux, "linux-x64"),
         ):
             with self.subTest(job=job_id):
                 self.assertTrue(block, f"job {job_id} not found")
@@ -715,7 +770,6 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
                 self.assertIn("npm install -g opencode-ai@1.18.22", block)
                 # Пол, не потолок: потребитель ставит ровно версию пола.
                 self.assertNotIn("opencode-ai@latest", block)
-                self.assertIn('opencode plugin "@apshendev/unica-opencode@', block)
                 self.assertIn("opencode debug skill", block)
                 self.assertIn("opencode mcp list", block)
                 self.assertIn("smoke-opencode-consumer.py", block)
@@ -725,19 +779,191 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
                 self.assertIn(
                     "working-directory: ${{ runner.temp }}/opencode-consumer", block
                 )
-                # Верификатор запускается из checkout: относительный путь к
-                # скрипту и корню плагина разрешается, артефакты потребителя
-                # передаются абсолютными путями.
-                self.assertIn(
-                    '"$RUNNER_TEMP/opencode-consumer/skills.json"', block
+                # Обе подкоманды верификатора доказывают установленный root
+                # пакета потребителя и target-специфичную раскладку bootstrap.
+                installed_root = (
+                    '"$RUNNER_TEMP/opencode-consumer/node_modules'
+                    '/@apshendev/unica-opencode"'
                 )
+                self.assertEqual(2, block.count(installed_root))
+                self.assertEqual(2, block.count(f"--target {target}"))
+                self.assertIn('"$RUNNER_TEMP/opencode-consumer/skills.json"', block)
                 self.assertIn('"$RUNNER_TEMP/opencode-consumer/mcp.txt"', block)
+                # Сбор наблюдений mcp тоже отказоустойчиво закрыт: провал
+                # `opencode mcp list` не должен прятаться за кодом tee.
+                self.assertIn(
+                    "set -euo pipefail",
+                    block.split("opencode mcp list")[0].split("Collect mcp")[-1],
+                )
 
         self.assertNotIn("continue-on-error", windows)
         self.assertIn("continue-on-error: true", linux)
         # Никакого OpenCode-потребителя под macOS.
         for job_id in ("smoke-opencode-darwin", "smoke-opencode-macos"):
             self.assertFalse(job_block(workflow, job_id))
+
+    def test_the_consumer_installs_the_exact_registry_version(self) -> None:
+        """Установка потребителя доказуема: npm ставит точную версию из реестра.
+
+        `opencode plugin` не оставляет проверяемого пути `node_modules`, а
+        checkout `plugins/unica` не доказывает содержимое публикации. Блок
+        установки ставит пакет npm'ом с `--ignore-scripts` и подключает его
+        абсолютным `file://` URI (INV.CI.OPENCODE-CONSUMER-INSTALLED-ROOT).
+        """
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        for job_id in ("smoke-opencode-windows", "smoke-opencode-linux"):
+            block = job_block(workflow, job_id)
+            with self.subTest(job=job_id):
+                self.assertTrue(block, f"job {job_id} not found")
+                self.assertIn("npm install --ignore-scripts", block)
+                self.assertIn('"@apshendev/unica-opencode@${version}"', block)
+                self.assertIn("npm init -y", block)
+                self.assertIn("pathToFileURL", block)
+                self.assertIn("file://", block)
+                # Установка идёт npm'ом из реестра, а не командой плагина:
+                # checkout исходников не подменяет проверку публикации.
+                self.assertNotIn('opencode plugin "', block)
+                self.assertIn("node_modules/@apshendev/unica-opencode", block)
+
+    def test_opencode_npm_publication_stages_smokes_then_promotes(self) -> None:
+        """Контур npm-выпуска: staging → потребители → promotion.
+
+        Publish job не двигает потребительские dist-tag и выгружает кандидата
+        артефактом; smoke-потребители ставят его из реестра; promotion
+        перемещает dist-tag только после зелёных Windows-проверок
+        (DEC.2026-08-25.NPM-DIST-TAG-PROMOTION).
+        """
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        publish = job_block(workflow, "publish-opencode-npm")
+        promote = job_block(workflow, "promote-opencode-npm")
+
+        self.assertTrue(publish, "job publish-opencode-npm not found")
+        self.assertTrue(promote, "job promote-opencode-npm not found")
+
+        # Publish: этапирует кандидата и не двигает потребительские теги.
+        self.assertIn("id-token: write", publish)
+        self.assertIn("contents: read", publish)
+        self.assertNotIn("NPM_PROMOTION_TOKEN", publish)
+        self.assertNotIn("NODE_AUTH_TOKEN", publish)
+        self.assertNotIn("dist-tag", publish)
+        self.assertIn("name: Stage OpenCode npm candidate (staging)", publish)
+        upload = publish[publish.index("actions/upload-artifact@v7") :]
+        self.assertIn("name: opencode-npm-candidate", upload)
+        self.assertIn("path: dist/npm", upload)
+        self.assertIn("retention-days: 1", upload)
+        self.assertIn("compression-level: 0", upload)
+
+        # Promote: контракт работы.
+        self.assertIn(
+            "needs: [publish-opencode-npm, smoke-opencode-windows, smoke-opencode-linux]",
+            promote,
+        )
+        self.assertIn("always()", promote)
+        self.assertIn("needs.publish-opencode-npm.result == 'success'", promote)
+        self.assertIn("needs.smoke-opencode-windows.result == 'success'", promote)
+        # Linux в needs ждёт отчёта, но его результат выпуск не гейтит.
+        self.assertNotIn("needs.smoke-opencode-linux.result", promote)
+        self.assertIn("github.event_name == 'push'", promote)
+        self.assertIn("startsWith(github.ref, 'refs/tags/')", promote)
+        self.assertIn("github.repository == 'apshendev/unica'", promote)
+        self.assertIn("permissions:", promote)
+        self.assertIn("contents: read", promote)
+        self.assertIn("environment: npm-promotion", promote)
+        self.assertIn("timeout-minutes: 10", promote)
+        self.assertNotIn("id-token", promote)
+        self.assertNotIn("publish-unica-opencode.py", promote)
+
+        # Порядок шагов promotion фиксирован: registry-url обязан прийти до
+        # npm-вызова, артефакт — до скрипта, токен — только в шаге скрипта.
+        steps = [
+            line.strip()
+            for line in promote.splitlines()
+            if line.strip().startswith("- uses:") or line.strip().startswith("- name:")
+        ]
+        self.assertEqual(
+            [
+                "- uses: actions/checkout@v7",
+                "- uses: actions/setup-python@v7",
+                "- uses: actions/setup-node@v7",
+                "- uses: actions/download-artifact@v8",
+            ],
+            [step for step in steps if step.startswith("- uses:")],
+        )
+        self.assertIn('python-version: "3.12"', promote)
+        self.assertIn('node-version: "24"', promote)
+        self.assertIn("registry-url: https://registry.npmjs.org", promote)
+        self.assertIn("name: opencode-npm-candidate", promote)
+        self.assertIn("path: dist/npm", promote)
+        self.assertIn("promote-unica-opencode.py", promote)
+        self.assertEqual(1, promote.count("NODE_AUTH_TOKEN"))
+        self.assertEqual(
+            1,
+            promote.count("NODE_AUTH_TOKEN: ${{ secrets.NPM_PROMOTION_TOKEN }}"),
+        )
+        # Токен живёт только на уровне шага promotion, не всей работы.
+        token_line_index = promote.index("NODE_AUTH_TOKEN: ${{")
+        promotion_step_index = promote.index("promote-unica-opencode.py")
+        self.assertLess(token_line_index, promotion_step_index)
+
+        # Порядок контура: smokes нуждаются в publish, promote — в smokes.
+        self.assertIn(
+            "needs: publish-opencode-npm",
+            job_block(workflow, "smoke-opencode-windows"),
+        )
+
+    def test_opencode_promotion_credentials_are_isolated_from_publishing(self):
+        """Токен promotion изолирован от публикации (INV.PKG.NPM-CREDENTIAL-SPLIT).
+
+        Статически проверяемое: у publish job нет npm-токенов ни на каком
+        уровне; promotion читает `NODE_AUTH_TOKEN` только из environment
+        secret `NPM_PROMOTION_TOKEN` и только в шаге promotion; работа
+        promotion объявляет environment. Scope токена и защита Environment —
+        живое evidence внешнего этапа, в статическую заявку не входят.
+        """
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        publish = job_block(workflow, "publish-opencode-npm")
+        promote = job_block(workflow, "promote-opencode-npm")
+
+        self.assertTrue(publish)
+        self.assertTrue(promote)
+        self.assertNotIn("NODE_AUTH_TOKEN", publish)
+        self.assertNotIn("NPM_PROMOTION_TOKEN", publish)
+        self.assertIn("environment: npm-promotion", promote)
+        # Единственное упоминание NODE_AUTH_TOKEN — шаг promotion скрипта.
+        self.assertEqual(1, promote.count("NODE_AUTH_TOKEN"))
+        self.assertIn("secrets.NPM_PROMOTION_TOKEN", promote)
+
+    def test_windows_smoke_blocks_the_release(self) -> None:
+        """Windows-потребитель блокирует выпуск (INV.CI.OPENCODE-CONSUMER-WINDOWS-BLOCKS)."""
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        windows = job_block(workflow, "smoke-opencode-windows")
+        promote = job_block(workflow, "promote-opencode-npm")
+
+        self.assertTrue(windows)
+        self.assertTrue(promote)
+        self.assertNotIn("continue-on-error", windows)
+        self.assertIn("needs.smoke-opencode-windows.result == 'success'", promote)
+
+    def test_linux_smoke_is_best_effort(self) -> None:
+        """Linux-потребитель — best effort (INV.CI.OPENCODE-CONSUMER-LINUX-BEST-EFFORT).
+
+        Linux остаётся в needs promotion, чтобы отчёт о сбое дожил до
+        агрегатного гейта, но результат Linux выпуск не гейтит.
+        """
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        linux = job_block(workflow, "smoke-opencode-linux")
+        promote = job_block(workflow, "promote-opencode-npm")
+
+        self.assertTrue(linux)
+        self.assertTrue(promote)
+        self.assertIn("continue-on-error: true", linux)
+        self.assertIn("smoke-opencode-linux", promote)
+        self.assertIn(
+            "needs: [publish-opencode-npm, smoke-opencode-windows, smoke-opencode-linux]",
+            promote,
+        )
+        self.assertNotIn("needs.smoke-opencode-linux.result", promote)
 
     def test_publication_is_one_linear_pass_ordered_by_needs(self) -> None:
         """ADR-0068: stage → tag → verify → promote, no pull requests, no warden.
@@ -752,7 +978,13 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertIn("workflow_run:", text)
         self.assertIn("workflow_dispatch:", text)
         self.assertIn("source_run_id:", text)
-        for job in ("stage:", "tag:", "verify-fresh-install:", "verify-upgrade:", "promote:"):
+        for job in (
+            "stage:",
+            "tag:",
+            "verify-fresh-install:",
+            "verify-upgrade:",
+            "promote:",
+        ):
             self.assertIn(f"\n  {job}", text)
         self.assertIn("needs: stage", text)
         self.assertIn("needs: [stage, tag]", text)
@@ -777,7 +1009,9 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertEqual(text.count("require_forward()"), 2)
         self.assertEqual(text.count('test "$newest" = "$RELEASE_TAG"'), 2)
         self.assertEqual(
-            text.count(".agents/plugins/marketplace.json .claude-plugin/marketplace.json"),
+            text.count(
+                ".agents/plugins/marketplace.json .claude-plugin/marketplace.json"
+            ),
             3,  # both guard loops and the promote `git add`
         )
         self.assertIn('require_forward "HEAD~1"', text)
@@ -785,7 +1019,10 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         # very tag its manifest declares — dispatch cannot smuggle another one.
         self.assertIn('test "$run_event" = "push"', text)
         self.assertIn('test "$run_branch" = "$RELEASE_TAG"', text)
-        self.assertIn('gh api "repos/IngvarConsulting/unica/git/ref/tags/${RELEASE_TAG}" --silent', text)
+        self.assertIn(
+            'gh api "repos/IngvarConsulting/unica/git/ref/tags/${RELEASE_TAG}" --silent',
+            text,
+        )
         self.assertIn("payload/plugins/unica/.codex-plugin/plugin.json", text)
         self.assertIn("payload/plugins/unica/.mcp.json", text)
         self.assertIn("payload/.agents/plugins/marketplace.json", text)
@@ -837,7 +1074,9 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
         ):
             self.assertIn(glob, self.release, glob)
 
-    def test_bsp_runtime_assessment_receives_the_engine_its_search_requires(self) -> None:
+    def test_bsp_runtime_assessment_receives_the_engine_its_search_requires(
+        self,
+    ) -> None:
         build = job_block(self.release, "build-tools")
         assessment = job_block(self.release, "release-assessment")
 
@@ -845,7 +1084,9 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
         self.assertIn("stage-unica-assessment-engine.py", build)
         self.assertIn("--artifact bsl-analyzer", build)
         self.assertIn("--artifact rlm-tools-bsl", build)
-        self.assertIn("--out-archive .build/unica-assessment-engine-linux-x64.tar.gz", build)
+        self.assertIn(
+            "--out-archive .build/unica-assessment-engine-linux-x64.tar.gz", build
+        )
         self.assertIn("name: unica-assessment-engine-linux-x64", assessment)
         self.assertIn(
             "--engine-overlay .build/assessment-engine/unica-assessment-engine-linux-x64.tar.gz",
@@ -893,7 +1134,7 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
         self.assertIn("tools.json", build.body)
         self.assertIn('manifest["runtimeFiles"]', build.body)
-        self.assertIn("--target \"${{ matrix.target }}\"", build.body)
+        self.assertIn('--target "${{ matrix.target }}"', build.body)
 
         expected_needs = {
             "package-thin": ("build-tools",),
@@ -910,19 +1151,25 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
 
         local_verifier = "python scripts/ci/verify-release-assets.py"
         self.assertIn(local_verifier, build.body)
-        self.assertIn('--asset-dir ".build/runtime-assets/${{ matrix.target }}"', build.body)
+        self.assertIn(
+            '--asset-dir ".build/runtime-assets/${{ matrix.target }}"', build.body
+        )
         self.assertIn('--target "${{ matrix.target }}"', build.body)
 
         published = jobs["verify-published-assets"]
         published_lifecycle = (
-            'gh release download "$GITHUB_REF_NAME" --pattern \'unica-runtime-*\' --dir published',
+            "gh release download \"$GITHUB_REF_NAME\" --pattern 'unica-runtime-*' --dir published",
             local_verifier + " --asset-dir published",
             "name: unica-thin-marketplace",
             "python scripts/ci/verify-delivery-reachable.py",
         )
-        published_positions = [published.body.index(step) for step in published_lifecycle]
+        published_positions = [
+            published.body.index(step) for step in published_lifecycle
+        ]
         self.assertEqual(published_positions, sorted(published_positions))
-        self.assertNotIn("--target", published.body, "published verification must cover every target")
+        self.assertNotIn(
+            "--target", published.body, "published verification must cover every target"
+        )
 
         smoke = jobs["smoke-thin-plugin"]
         smoke_lifecycle = (
@@ -932,7 +1179,7 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
         smoke_positions = [smoke.steps.index(step) for step in smoke_lifecycle]
         self.assertEqual(smoke_positions, sorted(smoke_positions))
         self.assertIn("matrix.target == 'linux-x64'", smoke.body)
-        self.assertIn('prefetch --plugin-root .build/thin/plugins/unica', smoke.body)
+        self.assertIn("prefetch --plugin-root .build/thin/plugins/unica", smoke.body)
 
 
 class PrereleaseNeverReachesConsumersTests(unittest.TestCase):

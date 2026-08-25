@@ -1,10 +1,11 @@
 ---
 id: INV.CI.OPENCODE-CONSUMER-SMOKE
-status: active
+status: superseded
 governs: product
 decision: DEC.2026-08-25.OPENCODE-CONSUMER-SMOKE
 check: tests/ci/test_unica_workflow.py::test_opencode_consumer_smoke_gates_the_release
 scope: [ci]
+superseded-by: [INV.CI.OPENCODE-CONSUMER-INSTALLED-ROOT, INV.CI.OPENCODE-CONSUMER-WINDOWS-BLOCKS, INV.CI.OPENCODE-CONSUMER-LINUX-BEST-EFFORT]
 ---
 
 # Дымовые потребители OpenCode гейтят теговый выпуск

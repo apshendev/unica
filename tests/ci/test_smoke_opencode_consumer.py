@@ -1,9 +1,14 @@
 """Unit tests for the OpenCode consumer smoke verifier.
 
 The verifier turns raw OpenCode CLI output into a release decision: every
-packaged skill must be discoverable, and the `unica` MCP server must report
-connected through the packaged bootstrap. The OpenCode CLI itself is never
-run here; tests feed recorded output shapes.
+packaged skill must be discoverable under the installed plugin root, and the
+`unica` MCP server must report connected through the packaged bootstrap of
+that same root. The OpenCode CLI itself is never run here; tests feed recorded
+output shapes.
+
+Path normalization follows `--target`, never the host OS: a `win-x64` suite
+checks Windows-style paths and a `linux-x64` suite checks POSIX-style paths in
+one process, so the suite result is identical on any runner.
 """
 
 from __future__ import annotations
@@ -17,6 +22,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "ci" / "smoke-opencode-consumer.py"
+
+WINDOWS_PLUGIN_ROOT = r"C:\consumer\node_modules\@apshendev\unica-opencode"
+LINUX_PLUGIN_ROOT = "/consumer/node_modules/@apshendev/unica-opencode"
 
 
 def load_verifier_module():
@@ -43,6 +51,10 @@ class VerifySkillsTests(unittest.TestCase):
                 f"---\nname: {name}\n---\n", encoding="utf-8"
             )
 
+    def location(self, name: str, *, root: str | None = None) -> str:
+        base = root if root is not None else str(self.root)
+        return f"{base}/skills/{name}"
+
     def write_skills_json(self, payload) -> Path:
         path = self.root / "skills.json"
         if isinstance(payload, str):
@@ -51,7 +63,12 @@ class VerifySkillsTests(unittest.TestCase):
             path.write_text(json.dumps(payload), encoding="utf-8")
         return path
 
-    def run_verify(self, payload, plugin_root: Path | None = None) -> None:
+    def run_verify(
+        self,
+        payload,
+        plugin_root: Path | str | None = None,
+        target: str = "win-x64",
+    ) -> None:
         module = load_verifier_module()
         json_path = self.write_skills_json(payload)
         module.main(
@@ -60,36 +77,95 @@ class VerifySkillsTests(unittest.TestCase):
                 "--json",
                 str(json_path),
                 "--plugin-root",
-                str(plugin_root or self.root),
+                str(plugin_root if plugin_root is not None else self.root),
+                "--target",
+                target,
             ]
         )
+
+    def expected_listing(self, *, root: str | None = None):
+        return [
+            {
+                "name": "code-search",
+                "location": self.location("code-search", root=root),
+            },
+            {
+                "name": "format-profile",
+                "location": self.location("format-profile", root=root),
+            },
+            {"name": "release", "location": self.location("release", root=root)},
+        ]
 
     def test_every_packaged_skill_must_be_listed(self) -> None:
-        self.run_verify(
-            [
-                {"name": "code-search"},
-                {"name": "format-profile"},
-                {"name": "release"},
-                {"name": "team-extra"},
-            ]
-        )
+        payload = self.expected_listing()
+        payload.append({"name": "team-extra", "location": self.location("team-extra")})
+        self.run_verify(payload)
 
     def test_a_missing_packaged_skill_fails_the_smoke(self) -> None:
-        module = load_verifier_module()
+        payload = self.expected_listing()
+        del payload[1]
 
         with self.assertRaises(SystemExit) as ctx:
-            self.run_verify([{"name": "code-search"}, {"name": "release"}])
+            self.run_verify(payload)
 
         self.assertIn("format-profile", str(ctx.exception))
 
     def test_malformed_skill_listing_fails_closed(self) -> None:
-        module = load_verifier_module()
-
         with self.assertRaises(SystemExit):
             self.run_verify("not json at all")
 
-    def test_string_entries_are_accepted_as_names(self) -> None:
-        self.run_verify(["code-search", "format-profile", "release"])
+    def test_string_entries_are_refused(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(["code-search", "format-profile", "release"])
+
+        self.assertIn("location", str(ctx.exception))
+
+    def test_a_skill_listing_without_locations_is_refused(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(
+                [
+                    {"name": "code-search"},
+                    {"name": "format-profile"},
+                    {"name": "release"},
+                ]
+            )
+
+        self.assertIn("location", str(ctx.exception))
+
+    def test_a_skill_location_outside_the_plugin_root_is_refused(self) -> None:
+        payload = self.expected_listing()
+        payload[0] = {
+            "name": "code-search",
+            "location": r"C:\other\package\skills\code-search",
+        }
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(payload)
+
+        self.assertIn("plugin root", str(ctx.exception))
+
+    def test_skill_locations_from_two_roots_are_refused(self) -> None:
+        payload = self.expected_listing()
+        payload.append(
+            {
+                "name": "team-extra",
+                "location": r"C:\other\package\skills\team-extra",
+            }
+        )
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(payload)
+
+        self.assertIn("plugin root", str(ctx.exception))
+
+    def test_locations_in_posix_syntax_pass_for_the_linux_target(self) -> None:
+        posix_root = self.root.as_posix()
+        payload = [
+            {"name": name, "location": f"{posix_root}/skills/{name}"}
+            for name in ("code-search", "format-profile", "release")
+        ]
+
+        self.run_verify(payload, plugin_root=posix_root, target="linux-x64")
 
 
 # OpenCode 1.18.22 печатает `opencode mcp list` clack-рамкой с ANSI-цветами.
@@ -125,7 +201,7 @@ def colored_detail(text: str, *, emphasized: bool = True) -> str:
 
 
 def colored_separator() -> str:
-    return "\x1b[90m│\x1b[39m\n"
+    return f"\x1b[90m│\x1b[39m\n"
 
 
 def colored_footer(servers: int) -> str:
@@ -155,27 +231,105 @@ class VerifyMcpTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
 
-    def run_verify(self, text: str) -> None:
+    def run_verify(
+        self,
+        text: str,
+        *,
+        plugin_root: str = WINDOWS_PLUGIN_ROOT,
+        target: str = "win-x64",
+    ) -> None:
         module = load_verifier_module()
         output = self.root / "mcp.txt"
         output.write_text(text, encoding="utf-8")
-        module.main(["verify-mcp", "--output", str(output)])
+        module.main(
+            [
+                "verify-mcp",
+                "--output",
+                str(output),
+                "--plugin-root",
+                plugin_root,
+                "--target",
+                target,
+            ]
+        )
+
+    def unica_frame(self, command: str) -> str:
+        return (
+            colored_server("unica", "connected", "✓")
+            + colored_detail(command)
+            + colored_separator()
+            + colored_footer(1)
+        )
 
     def test_a_connected_unica_server_through_the_packaged_bootstrap_passes(
         self,
     ) -> None:
-        for platform, command in (
-            ("windows", WINDOWS_BOOTSTRAP_COMMAND),
-            ("linux", LINUX_BOOTSTRAP_COMMAND),
+        for target, plugin_root, command in (
+            ("win-x64", WINDOWS_PLUGIN_ROOT, WINDOWS_BOOTSTRAP_COMMAND),
+            ("linux-x64", LINUX_PLUGIN_ROOT, LINUX_BOOTSTRAP_COMMAND),
         ):
-            with self.subTest(platform=platform):
+            with self.subTest(target=target):
                 self.run_verify(
-                    COLORED_HEADER
-                    + colored_server("unica", "connected", "✓")
-                    + colored_detail(command)
-                    + colored_separator()
-                    + colored_footer(1)
+                    COLORED_HEADER + self.unica_frame(command),
+                    plugin_root=plugin_root,
+                    target=target,
                 )
+
+    def test_a_bootstrap_outside_the_installed_package_root_is_refused(
+        self,
+    ) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(
+                COLORED_HEADER
+                + self.unica_frame(
+                    r"C:\tools\unica-bootstrap.exe run --plugin-root C:\tools"
+                )
+            )
+
+        self.assertIn("bootstrap", str(ctx.exception))
+
+    def test_a_linux_bootstrap_outside_the_installed_package_root_is_refused(
+        self,
+    ) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(
+                COLORED_HEADER
+                + self.unica_frame("/tools/unica-bootstrap run --plugin-root /tools"),
+                plugin_root=LINUX_PLUGIN_ROOT,
+                target="linux-x64",
+            )
+
+        self.assertIn("bootstrap", str(ctx.exception))
+
+    def test_the_packaged_bootstrap_under_the_plugin_root_is_accepted(self) -> None:
+        for target, plugin_root, binary in (
+            ("win-x64", WINDOWS_PLUGIN_ROOT, "unica-bootstrap.exe"),
+            ("linux-x64", LINUX_PLUGIN_ROOT, "unica-bootstrap"),
+        ):
+            with self.subTest(target=target):
+                separator = "\\" if target == "win-x64" else "/"
+                command = (
+                    f"{plugin_root}{separator}bootstrap{separator}bin"
+                    f"{separator}{target}{separator}{binary}"
+                    f" run --plugin-root {plugin_root}"
+                )
+                self.run_verify(
+                    COLORED_HEADER + self.unica_frame(command),
+                    plugin_root=plugin_root,
+                    target=target,
+                )
+
+    def test_a_foreign_target_layout_is_refused(self) -> None:
+        command = (
+            r"C:\consumer\node_modules\@apshendev\unica-opencode"
+            r"\bootstrap\bin\linux-x64\unica-bootstrap.exe run --plugin-root "
+            r"C:\consumer\node_modules\@apshendev\unica-opencode"
+        )
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(COLORED_HEADER + self.unica_frame(command))
+
+        self.assertIn("bootstrap", str(ctx.exception))
 
     def test_a_unica_server_that_is_not_connected_fails(self) -> None:
         with self.assertRaises(SystemExit) as ctx:
@@ -197,13 +351,7 @@ class VerifyMcpTests(unittest.TestCase):
 
     def test_a_unica_line_without_the_packaged_bootstrap_fails(self) -> None:
         with self.assertRaises(SystemExit) as ctx:
-            self.run_verify(
-                COLORED_HEADER
-                + colored_server("unica", "connected", "✓")
-                + colored_detail("npx something-else")
-                + colored_separator()
-                + colored_footer(1)
-            )
+            self.run_verify(COLORED_HEADER + self.unica_frame("npx something-else"))
 
         self.assertIn("bootstrap", str(ctx.exception))
 
@@ -217,9 +365,13 @@ class VerifyMcpTests(unittest.TestCase):
                 + colored_detail("https://unica.example/mcp")
                 + colored_separator()
                 + colored_server("replica", "connected", "✓")
-                + colored_detail("unica-bootstrap run --plugin-root /other/package")
+                + colored_detail(
+                    LINUX_BOOTSTRAP_COMMAND,
+                )
                 + colored_separator()
-                + colored_footer(2)
+                + colored_footer(2),
+                plugin_root=LINUX_PLUGIN_ROOT,
+                target="linux-x64",
             )
 
         self.assertIn("bootstrap", str(ctx.exception))

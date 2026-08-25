@@ -505,6 +505,8 @@ printf '{"plugin":["%s"]}\n' "$plugin_uri" > opencode.json
 Тест 4.1 закрепляет эти строки (`npm install --ignore-scripts`,
 `pathToFileURL`/`file://`, отсутствие `opencode plugin "` в блоке установки) и
 что checkout `plugins/unica` не используется как доказательство содержимого.
+> Выполнено: 2026-08-25 17:12 (4.1 — RED→GREEN: verifier и тесты переписаны под --plugin-root/--target обеих подкоманд (21 тест); workflow-ассерты 4.1 в составе 4.5)
+
 
 ### 4.2. Staging dist-tag (замечание 1, первая половина)
 
@@ -533,7 +535,9 @@ printf '{"plugin":["%s"]}\n' "$plugin_uri" > opencode.json
 - `STAGING_DIST_TAG = "staging"`, `PRERELEASE_DIST_TAG` удалить;
 - `publish_argv` всегда содержит `["--tag", STAGING_DIST_TAG]`;
 - docstring: публикация только готовит кандидата; `latest`/`next` двигает
+> Выполнено: 2026-08-25 17:12 (4.2 — STAGING_DIST_TAG='staging' в publish-скрипте, стабильный и пре-релиз идут под staging; тест test_stable_and_prerelease_publish_under_the_staging_dist_tag)
   promotion.
+
 
 ### 4.3. Ожидание registry visibility (замечание 2; R3)
 
@@ -564,7 +568,9 @@ printf '{"plugin":["%s"]}\n' "$plugin_uri" > opencode.json
 - после успешного `npm publish` — bounded-цикл
   `registry_tarball_url(NPM_PACKAGE_NAME, version)` → download → SHA-512 ==
   кандидат; иначе SystemExit;
+> Выполнено: 2026-08-25 17:12 (4.3 — wait_for_registry_visibility c bounded-опросом и побайтовой сверкой; timeout/не-JSON/не-URL/расхождение фатальны; агрегатный test_a_successful_publish_waits_for_registry_visibility)
 - rerun-ветка переиспользует ту же функцию сравнения байтов.
+
 
 ### 4.4. Promotion-скрипт (замечание 1, вторая половина)
 
@@ -611,7 +617,9 @@ registry-ответ. Positive-тесты реально распаковываю
 - читает `dist-tags --json`, цель `latest` (stable) / `next` (prerelease);
 - SemVer-precedence comparator в модуле (не `sort -V`);
 - единственная мутация — `npm dist-tag add <name>@<version> <target>`;
+> Выполнено: 2026-08-25 17:12 (4.4 — scripts/ci/promote-unica-opencode.py + tests/ci/test_promote_unica_opencode.py: настоящий gzip-tar фикстурный кандидат, SemVer-компаратор в модуле, единственная мутация npm dist-tag add, перечитывание postcondition; 12 тестов)
 - перечитывает dist-tags и требует точного postcondition.
+
 
 ### 4.5. Workflow (замечания 1, 3; R4, R5)
 
@@ -688,7 +696,9 @@ superseded-записи — исторические check обязаны раз
 - новый job `promote-opencode-npm` по контракту тестов (шаги 1–5 в порядке;
   Linux остаётся в `needs`, `continue-on-error: true` у Linux job не
   снимается);
+> Выполнено: 2026-08-25 17:12 (4.5 — workflow: publish → 'Stage OpenCode npm candidate (staging)' + артефакт opencode-npm-candidate; smoke-job'ы на npm install --ignore-scripts + file:// URI; новый job promote-opencode-npm (5 шагов, environment npm-promotion, step-level NODE_AUTH_TOKEN из NPM_PROMOTION_TOKEN); unica-ci.needs += promote)
 - `unica-ci.needs` += promote.
+
 
 ### 4.6. Агрегатный гейт
 
@@ -705,7 +715,9 @@ superseded-записи — исторические check обязаны раз
 Специальная ветка «Linux failure допустим» НЕ добавляется: Linux job
 сохраняет `continue-on-error: true`, поэтому наблюдаемый через
 `needs.smoke-opencode-linux.result` conclusion остаётся `success` даже при
+> Выполнено: 2026-08-25 17:12 (4.6 — evaluate-ci-gate.py FORK_TAG_ONLY_JOBS += promote-opencode-npm; PUBLISH_SKIPPED расширен; падение promotion на форке — fork.unexpected)
 падении шагов; видимым отчёт о сбое делает сам job.
+
 
 ### 4.7. Runbook (замечание 7)
 
@@ -721,7 +733,9 @@ superseded-записи — исторические check обязаны раз
 - только потом первый реальный prerelease;
 - предупреждение: не включать npm «disallow tokens», пока promotion использует
   токен;
+> Выполнено: 2026-08-25 17:12 (4.7 — раздел OpenCode npm release-runbook'а переписан под stage→smoke→promote: bootstrap 0.0.0-bootstrap.1 под dist-tag bootstrap, trusted publisher, NPM_PROMOTION_TOKEN в environment npm-promotion, предупреждение про disallow tokens)
 - deprecated bootstrap-версии и удаление её dist-tag — по мере надобности.
+
 
 ### 4.8. Архитектура npm-контрактов (требует этап 3)
 
@@ -798,7 +812,9 @@ superseded-записи — исторические check обязаны раз
 Недоказуемое «не удаляет тег и ассеты» переносится прозой нового решения.
 Порядок `publish → smoke → promotion` доказывается агрегатным тестом,
 являющимся `realized` решения; отдельная запись на порядок не заводится.
+> Выполнено: 2026-08-25 17:12 (4.8 — DEC.2026-08-25.NPM-TRUSTED-PUBLICATION → superseded (штамп, тела нетронуты); новый DEC.2026-08-25.NPM-DIST-TAG-PROMOTION + 11 INV-преемников; штампы NPM-PUBLICATION-GATE/NPM-RERUN-INTEGRITY/OPENCODE-CONSUMER-SMOKE со взаимными supersedes; design-документ написан; индекс перегенерирован)
 `python scripts/arch/registry.py --write-index`; стражи этапа 3 зелёные против
+
 обеих баз.
 
 ### 4.9. Проверка этапа
@@ -818,6 +834,7 @@ python scripts/arch/immutability.py --base upstream/main
 ```
 
 Никаких npm-записей: все новые тесты работают на фикстурах и mocker'ах.
+> Выполнено: 2026-08-25 17:12 (4.9 — 102 CI-теста OK (smoke 21 + publish 11 + promote 12 + workflow 41 + gate 17... суммарно Ran 102 OK); tests/arch Ran 122 OK; compileall OK; registry --check OK; fate 233 subjects; immutability origin/main 218 + upstream/main 205 — зелёные)
 
 ---
 

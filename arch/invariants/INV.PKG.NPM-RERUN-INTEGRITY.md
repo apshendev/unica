@@ -1,10 +1,11 @@
 ---
 id: INV.PKG.NPM-RERUN-INTEGRITY
-status: active
+status: superseded
 governs: product
 decision: DEC.2026-08-25.NPM-TRUSTED-PUBLICATION
 check: tests/ci/test_publish_unica_opencode.py::test_a_rerun_is_accepted_only_with_identical_registry_bytes
 scope: [pkg, ci]
+superseded-by: [INV.PKG.NPM-RERUN-BYTE-IDENTITY, INV.PKG.NPM-REGISTRY-VISIBILITY]
 ---
 
 # Повторная npm-публикация успешна только при побайтовом совпадении

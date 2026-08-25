@@ -43,6 +43,7 @@ FORK_TAG_ONLY_JOBS = (
     "publish-opencode-npm",
     "smoke-opencode-windows",
     "smoke-opencode-linux",
+    "promote-opencode-npm",
 )
 
 
@@ -74,12 +75,18 @@ def _validated_classification(
 
     values = {name: outputs[name] == "true" for name in CLASSIFICATION_OUTPUTS}
     contradictions: list[str] = []
-    if values["platform_changed"] and not (values["rust_changed"] or values["ci_changed"]):
+    if values["platform_changed"] and not (
+        values["rust_changed"] or values["ci_changed"]
+    ):
         contradictions.append("platform_changed requires rust_changed or ci_changed")
     if values["toolchain_changed"] and not (
-        values["rust_changed"] and values["package_changed"] and values["release_required"]
+        values["rust_changed"]
+        and values["package_changed"]
+        and values["release_required"]
     ):
-        contradictions.append("toolchain_changed requires rust/package/release contours")
+        contradictions.append(
+            "toolchain_changed requires rust/package/release contours"
+        )
     if values["package_changed"] and not values["release_required"]:
         contradictions.append("package_changed requires release_required")
     if values["assessment_required"] and not (
@@ -109,15 +116,23 @@ def expected_results(
     is_manual = event_name == "workflow_dispatch"
     is_pr = event_name == "pull_request"
     if not (is_tag or is_manual or is_pr):
-        invalid["event"] = (f"{event_name}:{ref}", "pull_request, tag push, or workflow_dispatch")
+        invalid["event"] = (
+            f"{event_name}:{ref}",
+            "pull_request, tag push, or workflow_dispatch",
+        )
 
     if (is_tag or is_manual) and not all(values.values()):
         invalid["classification"] = (
-            ", ".join(name for name, enabled in values.items() if not enabled) or "invalid",
+            ", ".join(name for name, enabled in values.items() if not enabled)
+            or "invalid",
             "all contours enabled for tag or workflow_dispatch",
         )
 
-    full_matrix = values["platform_changed"] or values["toolchain_changed"] or values["ci_changed"]
+    full_matrix = (
+        values["platform_changed"]
+        or values["toolchain_changed"]
+        or values["ci_changed"]
+    )
     primary_rust = values["rust_changed"] and not full_matrix
     package_pipeline = values["release_required"] or values["ci_changed"]
 
@@ -128,7 +143,9 @@ def expected_results(
         if values["search_integration_changed"] or values["ci_changed"]
         else "skipped"
     )
-    expected.update({job: "success" if package_pipeline else "skipped" for job in PACKAGE_JOBS})
+    expected.update(
+        {job: "success" if package_pipeline else "skipped" for job in PACKAGE_JOBS}
+    )
     expected[ASSESSMENT_JOB] = "success" if values["assessment_required"] else "skipped"
     expected["probe-thin-bootstrap"] = (
         "success" if package_pipeline and (is_pr or is_manual) else "skipped"
@@ -184,7 +201,9 @@ def evaluate_gate(
     return GateEvaluation(
         event_name=event_name,
         ref=ref,
-        classification={name: classification.get(name, "") for name in CLASSIFICATION_OUTPUTS},
+        classification={
+            name: classification.get(name, "") for name in CLASSIFICATION_OUTPUTS
+        },
         contour=contour,
         results=dict(results),
         expected=expected,

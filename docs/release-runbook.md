@@ -24,43 +24,69 @@ deliveries stay pinned to the toolchain repository regardless.
 
 ## OpenCode npm publication
 
-Tagged releases of this fork also publish the OpenCode candidate
-`@apshendev/unica-opencode` to npm. The `publish-opencode-npm` job runs after
-the runtime assets are published **and** re-verified, only on a tag push, and
-only when `github.repository == 'apshendev/unica'` — the same workflow file on
+Tagged releases of this fork stage the OpenCode candidate
+`@apshendev/unica-opencode` on npm in three steps: **stage → smoke →
+promote**. The `publish-opencode-npm` job runs after the runtime assets are
+published **and** re-verified, only on a tag push, and only when
+`github.repository == 'apshendev/unica'` — the same workflow file on
 upstream skips the job, and the aggregate gate expects it skipped there.
 Authentication is npm trusted publishing: the job carries
 `permissions: id-token: write` and npm (>= 11.5, from the Node 24 runner)
-exchanges the short-lived OIDC token for the publish. No long-lived npm token
-exists in this repository, and `publish-unica-opencode.py` re-checks the
-repository, event, ref, and package identity before invoking npm
-(`INV.PKG.NPM-PUBLICATION-GATE`).
+exchanges the short-lived OIDC token for the publish. No long-lived npm
+token exists in this repository, and `publish-unica-opencode.py` re-checks
+the repository, event, ref, and package identity before invoking npm
+(`INV.PKG.NPM-PUBLICATION-FORK-TAG-OIDC`).
 
-One-time prerequisites, done by the package owner:
+The publish itself only **stages**: every version, stable or prerelease,
+goes out under the `staging` dist-tag (`INV.PKG.NPM-STAGING-DIST-TAG`), and
+the script polls the registry until it serves this exact version with
+byte-identical tarball bytes; a visibility timeout, a garbage answer, or a
+byte mismatch is fatal (`INV.PKG.NPM-REGISTRY-VISIBILITY`). The consumer
+smokes then install the exact registry version on Windows (blocking) and
+Linux (best effort). Only after the Windows smoke reports success does the
+`promote-opencode-npm` job — running in the `npm-promotion` GitHub
+environment with the `NPM_PROMOTION_TOKEN` secret wired as step-level
+`NODE_AUTH_TOKEN` — move the consumer-facing dist-tag: `latest` for a
+stable version, `next` for a prerelease, never backwards, idempotently
+(`INV.PKG.NPM-CREDENTIAL-SPLIT`, `INV.PKG.NPM-PROMOTION-FORWARD-ONLY`,
+`INV.PKG.NPM-PROMOTION-IDEMPOTENT`). A rerun of a release whose npm version
+already exists succeeds only when the registry tarball is byte-identical to
+the candidate (`INV.PKG.NPM-RERUN-BYTE-IDENTITY`). Any other outcome — an
+integrity mismatch or an npm failure — leaves the workflow red; the tag and
+the runtime assets are never deleted or rewritten by this pipeline. The
+upstream Codex and Claude Code marketplace promotion is a separate workflow
+this one does not touch.
 
-1. **Claim the package.** Trusted publishers are configured in an existing
-   package's settings, so the name must be claimed first: publish the tagged
-   candidate once manually (`npm publish <tarball> --access public`, logged
-   in with 2FA — no CI token needed), or `npm org`/UI equivalent for your
-   account. This one publish predates trusted publishing; every later
-   version goes through the workflow.
+One-time prerequisites, done by the package owner, in this order:
+
+1. **Publish the one-time bootstrap.** An npm package's settings (including
+   trusted publishers) only exist once the package exists, and promotion
+   reads `dist-tags` of an existing package. Publish the helper version
+   `0.0.0-bootstrap.1` manually, logged in with 2FA — no CI token involved
+   — under the dist-tag `bootstrap`, never `latest` or `next`. The build
+   procedure for this helper payload is described separately (external
+   follow-up stage 7.2). If the bootstrap version must be superseded later,
+   deprecate it and remove its dist-tag as needed.
 2. **Link the trusted publisher.** In the package settings on npmjs.com add
    a trusted publisher for the GitHub repository `apshendev/unica` with the
-   workflow filename `unica-plugin-release.yml` (no directory prefix) and no
-   environment. From that moment the workflow's OIDC token is the only
-   credential that can publish.
+   workflow filename `unica-plugin-release.yml` (no directory prefix), no
+   environment, and the allowed action `npm publish`. From that moment the
+   workflow's OIDC token is the only credential that can publish.
+3. **Create the promotion secret.** Create a package-scoped npm
+   automation token and add it as the `NPM_PROMOTION_TOKEN` secret of the
+   GitHub Environment `npm-promotion` — never as a repository-wide secret.
+   Only the `promote-opencode-npm` job references it.
+4. Only then cut the first real prerelease.
 
-Until step 2 exists, a tagged release fails its npm job with an
-authorization error and nothing is published.
+Until step 2 exists, a tagged release fails its npm staging job with an
+authorization error and nothing is published; until step 3 exists,
+promotion fails closed and the candidate stays on `staging` without
+reaching consumers.
 
-A rerun of a release whose npm version already exists succeeds only when the
-registry tarball is byte-identical to the candidate (`npm view dist.tarball`,
-download, SHA-512 compare; `INV.PKG.NPM-RERUN-INTEGRITY`). SemVer prereleases
-publish under the `next` dist-tag so `latest` never serves one, mirroring the
-GitHub prerelease marking. Any other outcome — an integrity mismatch or an
-npm failure — leaves the workflow red; the tag and the runtime assets are
-never deleted or rewritten by this pipeline. The upstream Codex and Claude
-Code marketplace promotion is a separate workflow this one does not touch.
+Warning: do not enable npm's «disallow tokens» (granular-access token
+restriction) setting while promotion still uses the token from step 3 —
+promotion would lose its only credential. The token can be retired only
+when npm offers a trusted-publisher path for `dist-tag` writes.
 
 ## Why publication has two phases
 

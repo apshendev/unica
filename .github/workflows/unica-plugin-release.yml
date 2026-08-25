@@ -703,7 +703,7 @@ jobs:
           --plugin-root .build/thin/plugins/unica
 
   publish-opencode-npm:
-    name: Publish OpenCode npm candidate
+    name: Stage OpenCode npm candidate (staging)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [package-thin, verify-published-assets]
@@ -745,6 +745,14 @@ jobs:
           python scripts/ci/publish-unica-opencode.py
           --repo-root .
           --npm-root dist/npm
+      - name: Upload the staged npm candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: opencode-npm-candidate
+          path: dist/npm/*.tgz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   smoke-opencode-windows:
     name: Smoke OpenCode consumer (win-x64, floor 1.18.22)
@@ -775,6 +783,10 @@ jobs:
         run: |
           npm install -g opencode-ai@1.18.22
           opencode --version
+      # Установка доказуема: npm ставит точную версию из реестра с
+      # отключёнными скриптами, и путь node_modules становится
+      # проверяемым установленным корнем. Checkout исходников плагина
+      # доказательством содержимого публикации не является.
       - name: Install the exact published package as an isolated consumer
         shell: bash
         run: |
@@ -782,7 +794,13 @@ jobs:
           version="$(python -c 'import json; print(json.load(open("plugins/unica/package.json"))["version"])')"
           consumer="${RUNNER_TEMP}/opencode-consumer"
           mkdir -p "$consumer"
-          (cd "$consumer" && opencode plugin "@apshendev/unica-opencode@${version}")
+          cd "$consumer"
+          npm init -y
+          npm install --ignore-scripts "@apshendev/unica-opencode@${version}"
+          plugin_root="${consumer}/node_modules/@apshendev/unica-opencode"
+          plugin_uri="$(node -e 'const p=require("path").resolve(process.argv[1]); console.log(require("url").pathToFileURL(p).href)' "$plugin_root")"
+          case "$plugin_uri" in file://*) ;; *) exit 1;; esac
+          printf '{"plugin":["%s"]}\n' "$plugin_uri" > opencode.json
       - name: Collect skill observations from the consumer
         shell: bash
         working-directory: ${{ runner.temp }}/opencode-consumer
@@ -791,16 +809,22 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}/opencode-consumer
         # Холодная установка рантайма занимает время — это часть проверки.
-        run: opencode mcp list | tee mcp.txt
+        # Провал листинга не должен прятаться за кодом успеха tee.
+        run: |
+          set -euo pipefail
+          opencode mcp list | tee mcp.txt
       - name: Verify the consumer observations
         shell: bash
         run: |
           set -euo pipefail
           python scripts/ci/smoke-opencode-consumer.py verify-skills \
             --json "$RUNNER_TEMP/opencode-consumer/skills.json" \
-            --plugin-root plugins/unica
+            --plugin-root "$RUNNER_TEMP/opencode-consumer/node_modules/@apshendev/unica-opencode" \
+            --target win-x64
           python scripts/ci/smoke-opencode-consumer.py verify-mcp \
-            --output "$RUNNER_TEMP/opencode-consumer/mcp.txt"
+            --output "$RUNNER_TEMP/opencode-consumer/mcp.txt" \
+            --plugin-root "$RUNNER_TEMP/opencode-consumer/node_modules/@apshendev/unica-opencode" \
+            --target win-x64
 
   smoke-opencode-linux:
     name: Smoke OpenCode consumer (linux-x64, best effort)
@@ -833,6 +857,10 @@ jobs:
         run: |
           npm install -g opencode-ai@1.18.22
           opencode --version
+      # Установка доказуема: npm ставит точную версию из реестра с
+      # отключёнными скриптами, и путь node_modules становится
+      # проверяемым установленным корнем. Checkout исходников плагина
+      # доказательством содержимого публикации не является.
       - name: Install the exact published package as an isolated consumer
         shell: bash
         run: |
@@ -840,7 +868,13 @@ jobs:
           version="$(python -c 'import json; print(json.load(open("plugins/unica/package.json"))["version"])')"
           consumer="${RUNNER_TEMP}/opencode-consumer"
           mkdir -p "$consumer"
-          (cd "$consumer" && opencode plugin "@apshendev/unica-opencode@${version}")
+          cd "$consumer"
+          npm init -y
+          npm install --ignore-scripts "@apshendev/unica-opencode@${version}"
+          plugin_root="${consumer}/node_modules/@apshendev/unica-opencode"
+          plugin_uri="$(node -e 'const p=require("path").resolve(process.argv[1]); console.log(require("url").pathToFileURL(p).href)' "$plugin_root")"
+          case "$plugin_uri" in file://*) ;; *) exit 1;; esac
+          printf '{"plugin":["%s"]}\n' "$plugin_uri" > opencode.json
       - name: Collect skill observations from the consumer
         shell: bash
         working-directory: ${{ runner.temp }}/opencode-consumer
@@ -849,16 +883,64 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}/opencode-consumer
         # Холодная установка рантайма занимает время — это часть проверки.
-        run: opencode mcp list | tee mcp.txt
+        # Провал листинга не должен прятаться за кодом успеха tee.
+        run: |
+          set -euo pipefail
+          opencode mcp list | tee mcp.txt
       - name: Verify the consumer observations
         shell: bash
         run: |
           set -euo pipefail
           python scripts/ci/smoke-opencode-consumer.py verify-skills \
             --json "$RUNNER_TEMP/opencode-consumer/skills.json" \
-            --plugin-root plugins/unica
+            --plugin-root "$RUNNER_TEMP/opencode-consumer/node_modules/@apshendev/unica-opencode" \
+            --target linux-x64
           python scripts/ci/smoke-opencode-consumer.py verify-mcp \
-            --output "$RUNNER_TEMP/opencode-consumer/mcp.txt"
+            --output "$RUNNER_TEMP/opencode-consumer/mcp.txt" \
+            --plugin-root "$RUNNER_TEMP/opencode-consumer/node_modules/@apshendev/unica-opencode" \
+            --target linux-x64
+
+  promote-opencode-npm:
+    name: Promote OpenCode npm candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [publish-opencode-npm, smoke-opencode-windows, smoke-opencode-linux]
+    if: >-
+      ${{
+        always() &&
+        needs.publish-opencode-npm.result == 'success' &&
+        needs.smoke-opencode-windows.result == 'success' &&
+        github.event_name == 'push' &&
+        startsWith(github.ref, 'refs/tags/') &&
+        github.repository == 'apshendev/unica'
+      }}
+    permissions:
+      contents: read
+    # Токен promotion живёт только в этом окружении: публикация и
+    # продвижение не делят секретов.
+    environment: npm-promotion
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # npm-токен скрипта promotion входит в реестр только через
+      # настроенный registry-url: без него обращения анонимны.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v8
+        with:
+          name: opencode-npm-candidate
+          path: dist/npm
+      - name: Promote the staged candidate to the consumer dist-tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PROMOTION_TOKEN }}
+        run: >
+          python scripts/ci/promote-unica-opencode.py
+          --repo-root .
+          --npm-root dist/npm
 
   unica-ci:
     name: Unica CI
@@ -881,6 +963,7 @@ jobs:
       - publish-opencode-npm
       - smoke-opencode-windows
       - smoke-opencode-linux
+      - promote-opencode-npm
     steps:
       - uses: actions/checkout@v7
       - name: Evaluate required CI results

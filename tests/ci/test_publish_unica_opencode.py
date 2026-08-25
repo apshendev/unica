@@ -1,9 +1,10 @@
-"""Contract tests for the OpenCode npm publication step.
+"""Contract tests for the OpenCode npm staging step.
 
-The publication script is the only writer to npm. Its seams are the process
+The staging script is the only writer to npm. Its seams are the process
 environment it gates on and the npm invocations it makes; tests fake the
 process boundaries (publish attempt, registry query, registry download) and
-never talk to npm.
+never talk to npm. Publication only stages the candidate: the `latest`/
+`next` dist-tags are moved by the separate promotion script.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "ci" / "publish-unica-opencode.py"
+PROMOTE_SCRIPT_PATH = REPO_ROOT / "scripts" / "ci" / "promote-unica-opencode.py"
 
 FORK_ENV = {
     "GITHUB_REPOSITORY": "apshendev/unica",
@@ -26,6 +28,8 @@ FORK_ENV = {
     "GITHUB_REF": "refs/tags/v0.12.0",
     "GITHUB_REF_NAME": "v0.12.0",
 }
+
+REGISTRY_URL = "https://registry.npmjs.org/x.tgz"
 
 
 def load_publish_module():
@@ -38,18 +42,30 @@ def load_publish_module():
 
 
 class FakeProcess:
-    """Answers one kind of subprocess call and records every argv."""
+    """Answers subprocess calls from a per-prefix queue and records argv.
+
+    A prefix maps to one `(returncode, stdout, stderr)` tuple consumed per
+    call, or to a list of them consumed in order; an exhausted or unknown
+    prefix is a test failure, not a silent repeat.
+    """
 
     def __init__(self, results) -> None:
-        # results: dict command-prefix -> (returncode, stdout, stderr)
-        self.results = results
+        # results: dict command-prefix -> single result or list of results
+        self.results = {
+            prefix: (list(result) if isinstance(result, list) else [result])
+            for prefix, result in results.items()
+        }
         self.calls: list[tuple[list[str], str | None]] = []
 
     def __call__(self, argv, *, cwd=None):
         self.calls.append((list(argv), cwd))
-        for prefix, result in self.results.items():
+        for prefix, queue in self.results.items():
             if list(argv[: len(prefix)]) == list(prefix):
-                returncode, stdout, stderr = result
+                if not queue:
+                    raise AssertionError(
+                        f"subprocess prefix {prefix} exhausted by call: {argv}"
+                    )
+                returncode, stdout, stderr = queue.pop(0)
                 return subprocess.CompletedProcess(argv, returncode, stdout, stderr)
         raise AssertionError(f"unexpected subprocess call: {argv}")
 
@@ -92,6 +108,8 @@ class OpenCodeNpmPublicationTests(unittest.TestCase):
             patch.dict("os.environ", self.env, clear=False),
             patch.object(module, "run_process", process),
             patch.object(module, "download_registry_tarball", fake_download),
+            patch.object(module, "REGISTRY_VISIBILITY_ATTEMPTS", 2),
+            patch.object(module.time, "sleep", lambda seconds: None),
         ):
             module.main(["--npm-root", str(self.npm_root)])
         return module, downloads
@@ -99,10 +117,22 @@ class OpenCodeNpmPublicationTests(unittest.TestCase):
     def publish_calls(self, process: FakeProcess) -> list[tuple[list[str], str | None]]:
         return [call for call in process.calls if call[0][:2] == ["npm", "publish"]]
 
-    def test_a_tagged_fork_release_publishes_with_provenance(self) -> None:
-        process = FakeProcess({("npm", "publish"): (0, "", "")})
+    def visibility_ok_process(self) -> FakeProcess:
+        # Первый опрос реестра — версия ещё не видна, второй — URL тарбола.
+        return FakeProcess(
+            {
+                ("npm", "publish"): (0, "", ""),
+                ("npm", "view"): [
+                    (1, "", "npm error code E404 not found"),
+                    (0, json.dumps(REGISTRY_URL), ""),
+                ],
+            }
+        )
 
-        self.run_publish_step(process)
+    def test_a_tagged_fork_release_publishes_with_provenance(self) -> None:
+        process = self.visibility_ok_process()
+
+        self.run_publish_step(process, registry_bytes=self.tarball.read_bytes())
 
         calls = self.publish_calls(process)
         self.assertEqual(len(calls), 1)
@@ -110,23 +140,154 @@ class OpenCodeNpmPublicationTests(unittest.TestCase):
         self.assertIn("--provenance", argv)
         self.assertIn("--access", argv)
         self.assertIn("public", argv)
-        self.assertNotIn("--tag", argv)
         self.assertIn(str(self.tarball), argv)
         self.assertEqual(cwd, str(REPO_ROOT))
-        self.assertEqual(len(process.calls), 1, "no registry query after success")
+        # Успех ещё не конец: публикация подтверждается видимостью в реестре.
+        self.assertEqual(2, len(process.calls) - 1)
 
-    def test_a_prerelease_publishes_under_the_next_dist_tag(self) -> None:
+    def test_stable_and_prerelease_publish_under_the_staging_dist_tag(self) -> None:
+        scenarios = {
+            "stable": ("0.12.0", FORK_ENV),
+            "prerelease": (
+                "0.13.0-rc.1",
+                {
+                    "GITHUB_REPOSITORY": "apshendev/unica",
+                    "GITHUB_EVENT_NAME": "push",
+                    "GITHUB_REF": "refs/tags/v0.13.0-rc.1",
+                    "GITHUB_REF_NAME": "v0.13.0-rc.1",
+                },
+            ),
+        }
+        for label, (version, env) in scenarios.items():
+            with self.subTest(label=label):
+                self.make_candidate(version)
+                self.env = dict(env)
+                process = self.visibility_ok_process()
+
+                self.run_publish_step(process, registry_bytes=self.tarball.read_bytes())
+
+                argv, _cwd = self.publish_calls(process)[0]
+                self.assertIn("--tag", argv)
+                self.assertEqual("staging", argv[argv.index("--tag") + 1])
+
+    def test_a_prerelease_never_publishes_under_next(self) -> None:
         self.make_candidate("0.13.0-rc.1")
         self.env.update(
             {"GITHUB_REF": "refs/tags/v0.13.0-rc.1", "GITHUB_REF_NAME": "v0.13.0-rc.1"}
         )
-        process = FakeProcess({("npm", "publish"): (0, "", "")})
+        process = self.visibility_ok_process()
 
-        self.run_publish_step(process)
+        self.run_publish_step(process, registry_bytes=self.tarball.read_bytes())
 
         argv, _cwd = self.publish_calls(process)[0]
-        tag_index = argv.index("--tag")
-        self.assertEqual(argv[tag_index + 1], "next")
+        self.assertNotIn("next", argv)
+        self.assertEqual("staging", argv[argv.index("--tag") + 1])
+
+    def test_the_staging_tag_literal_is_shared_by_stage_and_promotion(self) -> None:
+        publish_text = SCRIPT_PATH.read_text(encoding="utf-8")
+        promote_text = PROMOTE_SCRIPT_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('STAGING_DIST_TAG = "staging"', publish_text)
+        self.assertIn('STAGING_DIST_TAG = "staging"', promote_text)
+
+    def test_a_successful_publish_waits_for_registry_visibility(self) -> None:
+        """Единый фальсификатор visibility-обязательства стадии.
+
+        Успех `npm publish` ничего не доказывает, пока реестр не начал
+        отдавать эту версию байт-в-байт; timeout, мусор вместо ответа и
+        чужие байты фатальны, и rerun проверяет те же байты.
+        """
+        # Успех: первый опрос E404, второй отдаёт URL, байты совпадают.
+        success = self.visibility_ok_process()
+        _module, downloads = self.run_publish_step(
+            success, registry_bytes=self.tarball.read_bytes()
+        )
+        self.assertEqual(downloads, [REGISTRY_URL])
+
+        # Постоянный E404: попытки исчерпаны — visibility timeout.
+        timeout = FakeProcess(
+            {
+                ("npm", "publish"): (0, "", ""),
+                ("npm", "view"): [
+                    (1, "", "npm error code E404 not found"),
+                    (1, "", "npm error code E404 not found"),
+                ],
+            }
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_publish_step(timeout)
+        self.assertIn("visibility timeout", str(ctx.exception))
+
+        # `npm view` ответил не-JSON — фатально, это не «пока не видна».
+        garbage = FakeProcess(
+            {
+                ("npm", "publish"): (0, "", ""),
+                ("npm", "view"): (0, "not json at all", ""),
+            }
+        )
+        with self.assertRaises(SystemExit):
+            self.run_publish_step(garbage)
+
+        # `npm view` вернул JSON-строку, не являющуюся URL тарбола.
+        banana = FakeProcess(
+            {
+                ("npm", "publish"): (0, "", ""),
+                ("npm", "view"): (0, json.dumps("banana"), ""),
+            }
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_publish_step(banana)
+        self.assertIn("banana", str(ctx.exception))
+
+        # SHA-512 ответа реестра расходится с кандидатом.
+        mismatch = FakeProcess(
+            {
+                ("npm", "publish"): (0, "", ""),
+                ("npm", "view"): (0, json.dumps(REGISTRY_URL), ""),
+            }
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_publish_step(mismatch, registry_bytes=b"other-bytes")
+        self.assertIn("differ", str(ctx.exception))
+
+        # Rerun-ветка сверяет те же байты тем же механизмом.
+        rerun = FakeProcess(
+            {
+                ("npm", "publish"): [
+                    (1, "", "npm error code E403 forbidden"),
+                ],
+                ("npm", "view"): (0, json.dumps(REGISTRY_URL), ""),
+            }
+        )
+        _module, downloads = self.run_publish_step(
+            rerun, registry_bytes=self.tarball.read_bytes()
+        )
+        self.assertEqual(downloads, [REGISTRY_URL])
+
+    def test_a_rerun_is_accepted_only_with_identical_registry_bytes(self) -> None:
+        # Реестр отдаёт версию, но с другими байтами.
+        differing = FakeProcess(
+            {
+                ("npm", "publish"): (1, "", "npm error code E403 forbidden"),
+                ("npm", "view"): (0, json.dumps(REGISTRY_URL), ""),
+            }
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_publish_step(differing, registry_bytes=b"other-bytes")
+        self.assertIn("differ", str(ctx.exception))
+        self.assertEqual(self.publish_calls(differing), differing.calls[:1])
+
+        # Реестр отдаёт те же байты: rerun принят.
+        identical = FakeProcess(
+            {
+                ("npm", "publish"): (1, "", "npm error code E403 forbidden"),
+                ("npm", "view"): (0, json.dumps(REGISTRY_URL), ""),
+            }
+        )
+        _module, downloads = self.run_publish_step(
+            identical, registry_bytes=self.tarball.read_bytes()
+        )
+        self.assertEqual(downloads, [REGISTRY_URL])
 
     def test_publication_refuses_to_run_from_the_upstream_repository(self) -> None:
         self.env["GITHUB_REPOSITORY"] = "IngvarConsulting/unica"
@@ -182,36 +343,9 @@ class OpenCodeNpmPublicationTests(unittest.TestCase):
         self.assertIn("@apshendev/unica-opencode", str(ctx.exception))
         self.assertEqual(process.calls, [])
 
-    def test_a_rerun_is_accepted_only_with_identical_registry_bytes(self) -> None:
-        registry_url = "https://registry.npmjs.org/x.tgz"
-
-        # The registry serves the version, but with different bytes.
-        differing = FakeProcess(
-            {
-                ("npm", "publish"): (1, "", "npm error code E403 forbidden"),
-                ("npm", "view"): (0, json.dumps(registry_url), ""),
-            }
-        )
-        with self.assertRaises(SystemExit) as ctx:
-            self.run_publish_step(differing, registry_bytes=b"other-bytes")
-        self.assertIn("differ", str(ctx.exception))
-        self.assertEqual(self.publish_calls(differing), differing.calls[:1])
-
-        # The registry serves the same bytes: the rerun is accepted.
-        identical = FakeProcess(
-            {
-                ("npm", "publish"): (1, "", "npm error code E403 forbidden"),
-                ("npm", "view"): (0, json.dumps(registry_url), ""),
-            }
-        )
-        _module, downloads = self.run_publish_step(
-            identical, registry_bytes=self.tarball.read_bytes()
-        )
-        self.assertEqual(downloads, [registry_url])
-
     def test_a_publish_failure_without_a_published_version_stays_failed(self) -> None:
-        # The version is not in the registry: whatever npm said, this was not
-        # an already-published rerun, and no recovery may soften the failure.
+        # Версии в реестре нет: что бы npm ни сказал, это не уже
+        # опубликованный rerun, и восстановление не смягчает отказ.
         process = FakeProcess(
             {
                 ("npm", "publish"): (1, "", "npm error code EPERM nope"),
