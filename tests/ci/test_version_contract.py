@@ -28,9 +28,9 @@ class VersionContractTests(unittest.TestCase):
             (REPO_ROOT / "crates/unica-coder/Cargo.toml").read_text(encoding="utf-8")
         )
         lock = json.loads(
-            (
-                REPO_ROOT / "plugins/unica/third-party/tools.lock.json"
-            ).read_text(encoding="utf-8")
+            (REPO_ROOT / "plugins/unica/third-party/tools.lock.json").read_text(
+                encoding="utf-8"
+            )
         )
         public_tools = [tool for tool in lock["tools"] if tool["name"] == "unica"]
 
@@ -124,7 +124,9 @@ class VersionContractTests(unittest.TestCase):
     def test_the_contract_refuses_a_malformed_version_everywhere(self) -> None:
         module = load_module()
 
-        errors = module.validate_version_contract({"cargo": "banana", "plugin": "banana"})
+        errors = module.validate_version_contract(
+            {"cargo": "banana", "plugin": "banana"}
+        )
 
         self.assertTrue(any("banana" in error for error in errors), errors)
 
@@ -182,6 +184,28 @@ class VersionContractTests(unittest.TestCase):
         self.assertEqual(errors, ["plugin version 0.6.1 != expected 0.7.0"])
 
 
+class ToolingProjectTests(unittest.TestCase):
+    """Проектный uv — окружение разработки, а не второй продукт.
+
+    Питонья сторона репозитория не участвует в product version lockstep и не
+    собирается как пакет: имя, версия и флаг `package = false` закрепляют
+    tooling-проект.
+    """
+
+    def test_the_tooling_project_is_not_a_python_package(self) -> None:
+        data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(data["project"]["name"], "unica-dev")
+        self.assertEqual(data["project"]["version"], "0.0.0")
+        self.assertEqual(data["project"]["requires-python"], ">=3.12")
+        self.assertEqual(data["tool"]["uv"]["package"], False)
+        self.assertNotIn("build-system", data)
+        self.assertNotIn("scripts", data["project"])
+
+    def test_the_python_pin_matches_the_development_floor(self) -> None:
+        pin = (REPO_ROOT / ".python-version").read_text(encoding="utf-8").strip()
+
+        self.assertEqual(pin, "3.12")
 
 
 class PrereleaseVersionTests(unittest.TestCase):

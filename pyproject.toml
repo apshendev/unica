@@ -1,17 +1,10 @@
 [project]
-name = "unica"
-version = "0.1.0"
-description = "Add your description here"
+name = "unica-dev"
+version = "0.0.0"
+description = "Development tooling for the Unica repository"
 readme = "README.md"
-authors = [
-    { name = "apshendev", email = "apshendev@gmail.com" }
-]
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = []
 
-[project.scripts]
-unica = "unica:main"
-
-[build-system]
-requires = ["uv_build>=0.12.5,<0.13.0"]
-build-backend = "uv_build"
+[tool.uv]
+package = false
