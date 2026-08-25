@@ -1217,6 +1217,23 @@ python scripts/arch/immutability.py --base upstream/main
 - дефект либо исправляется по причине (с красным тестом), либо фиксируется в
   PR-описании с доказательством равенства на базе. Общего исключения нет.
 
+> Выполнено: 2026-08-25 17:12 (финальная проверка — uv sync --locked OK;
+> requirements установлены в проектное окружение; tests/arch Ran 123 OK;
+> compileall OK; cargo test -p unica-bootstrap --test manifest_contract — 23
+> passed; registry --check OK; fate 233 subjects; immutability origin/main 218
+> + upstream/main 205 зелёные. Полная сюита tests/ci на локальной
+> Windows-машине: 763 теста, 220 падений — все окруженческие, поимённо
+> сравнены с базой 0075b905 в отдельном detached worktree тем же
+> интерпретатором и PATH: множества упавших идентичны (19 уникальных имён на
+> HEAD и на базе, пустая симметричная разница). Причины: WSL-bash без python
+> (script_parity, 198 subTest-падений), POSIX-exe-биты и разделители путей
+> (release_assessment, stage_unica_assessment_engine, product_contracts ×2),
+> launch.sh/installer POSIX-семантика (bootstrap_launch_path ×3,
+> local_dev_installer ×12), поиск target/debug/unica без .exe
+> (tool_surface_ledger), код 9009 запуска не-Windows команды
+> (rust_platform_boundary). Привнесённых работой падений нет; на Linux CI эти
+> тесты выполняются в POSIX-окружении)
+
 ## Что не трогать
 
 - `CLAUDE.md`, `docs/agents/`, `docs/specs/` — пользовательские.
