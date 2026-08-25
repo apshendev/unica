@@ -139,6 +139,27 @@ def wait_for_registry_visibility(
     )
 
 
+def validate_not_a_local_debug_candidate(staging: Path, manifest: dict) -> None:
+    """Development-кандидат не доезжает до первого вызова npm.
+
+    Маркер `opencode/local-debug.json` и development-манифест — два
+    независимых доказательства local-debug природы staging; каждое отказывает
+    само по себе, до валидации гейтов и до обращений к npm
+    (INV.PKG.OPENCODE-DEV-CANDIDATE-UNPUBLISHABLE).
+    """
+    marker = staging / "opencode" / "local-debug.json"
+    if marker.is_file():
+        raise SystemExit(
+            "refusing to publish a local-debug candidate: "
+            f"{marker.relative_to(staging)} marks a development build"
+        )
+    if manifest.get("development"):
+        raise SystemExit(
+            "refusing to publish a local-debug candidate: "
+            "runtime-manifest.json is a development manifest"
+        )
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -155,6 +176,7 @@ def main(argv=None) -> None:
     manifest = json.loads(
         (staging / "runtime-manifest.json").read_text(encoding="utf-8")
     )
+    validate_not_a_local_debug_candidate(staging, manifest)
     if manifest.get("pluginVersion") != package["version"]:
         raise SystemExit(
             f"runtime manifest pluginVersion {manifest.get('pluginVersion')} "

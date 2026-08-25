@@ -9,6 +9,7 @@ the module OpenCode would load, with no private helpers involved.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -260,6 +261,141 @@ class OpenCodeAdapterConfigTests(unittest.TestCase):
                     # Initialization refusal must not leave partial mutations:
                     # the configuration object is byte-for-byte what it was.
                     self.assertEqual(report["config"], config)
+
+
+class OpenCodeAdapterLocalDebugTests(unittest.TestCase):
+    """Маркер local-debug переключает команду mcp.unica на прямой бинарник.
+
+    Стенд — полная постановочная копия корня плагина: адаптер читает маркер
+    относительно собственного расположения, поэтому проверяется именно
+    упакованная форма, а не исходное дерево, где маркера нет никогда.
+    """
+
+    MARKER_NAME = "local-debug.json"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+
+    def staged_plugin(self, *, marker: dict | None, with_binary: bool = True) -> Path:
+        staging = self.root / "staged"
+        if staging.exists():
+            shutil.rmtree(staging)
+        shutil.copytree(REPO_ROOT / "plugins" / "unica", staging)
+        # В исходном дереве нет npm-артефактов и маркера; тестовый стенд
+        # повторяет упакованный корень без них.
+        for name in ("package.json", "package-lock.json"):
+            target = staging / name
+            if target.exists():
+                target.unlink()
+        if with_binary:
+            binary = staging / "bin" / "win-x64" / "unica.exe"
+            binary.parent.mkdir(parents=True, exist_ok=True)
+            binary.write_bytes(b"staged core binary")
+        if marker is not None:
+            (staging / "opencode" / self.MARKER_NAME).write_text(
+                json.dumps(marker), encoding="utf-8"
+            )
+        return staging
+
+    def adapter_report(self, staging: Path, instruction: dict) -> dict:
+        instruction = {
+            "adapterPath": str(staging / "opencode" / "index.js"),
+            **instruction,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            instruction_path = Path(tmp) / "instruction.json"
+            instruction_path.write_text(json.dumps(instruction), encoding="utf-8")
+            completed = subprocess.run(
+                ["node", str(DRIVER_PATH), str(instruction_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=REPO_ROOT,
+            )
+            if completed.returncode != 0:
+                raise AssertionError(
+                    f"driver failed ({completed.returncode}):\n{completed.stderr}"
+                )
+            return json.loads(completed.stdout)
+
+    def test_local_debug_marker_switches_to_direct_binary_launch(self) -> None:
+        staging = self.staged_plugin(
+            marker={
+                "mode": "local-debug",
+                "target": "win-x64",
+                "pluginVersion": "0.12.0",
+            }
+        )
+
+        report = self.adapter_report(
+            staging,
+            {
+                "config": {},
+                "platform": "win32",
+                "arch": "x64",
+            },
+        )
+
+        self.assertTrue(report["ok"], report)
+        unica = report["config"]["mcp"]["unica"]
+        self.assertEqual(unica["type"], "local")
+        self.assertEqual(unica["enabled"], True)
+        self.assertEqual(unica["timeout"], MCP_TIMEOUT_MS)
+        # Прямой запуск ядра без аргументов: MCP stdio не требует ни флагов,
+        # ни cwd, ни bootstrap-обёртки.
+        self.assertEqual(
+            unica["command"],
+            [f"{to_posix(str(staging))}/bin/win-x64/unica.exe"],
+        )
+
+    def test_a_marker_for_another_target_fails_during_initialization(self) -> None:
+        staging = self.staged_plugin(
+            marker={
+                "mode": "local-debug",
+                "target": "linux-x64",
+                "pluginVersion": "0.12.0",
+            }
+        )
+        config = {
+            "skills": {"paths": ["~/team"], "urls": []},
+            "mcp": {"other": {"type": "local", "command": ["x"], "enabled": True}},
+        }
+
+        report = self.adapter_report(
+            staging,
+            {"config": config, "platform": "win32", "arch": "x64"},
+        )
+
+        self.assertFalse(report["ok"], report)
+        self.assertIn("linux-x64", report["error"])
+        self.assertIn("win-x64", report["error"])
+        # Отказ инициализации не мутирует конфигурацию.
+        self.assertEqual(report["config"], config)
+
+    def test_a_corrupt_marker_falls_back_to_the_release_bootstrap(self) -> None:
+        staging = self.staged_plugin(marker=None)
+        (staging / "opencode" / self.MARKER_NAME).write_text(
+            "{not json", encoding="utf-8"
+        )
+
+        report = self.adapter_report(
+            staging,
+            {"config": {}, "platform": "win32", "arch": "x64"},
+        )
+
+        # Битый маркер не может доказать режим: адаптер ведёт себя как
+        # release-пакет и запускает bootstrap.
+        self.assertTrue(report["ok"], report)
+        unica = report["config"]["mcp"]["unica"]
+        self.assertEqual(
+            unica["command"][1:], ["run", "--plugin-root", to_posix(str(staging))]
+        )
+
+
+def to_posix(value: str) -> str:
+    return value.replace("\\", "/")
 
 
 if __name__ == "__main__":

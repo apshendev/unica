@@ -6,6 +6,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `CTR.FORMAT.PLATFORM-XML-8-3-27` | контракт · product | active |  | Чтение ресурсов сохраняет байты корпуса Platform XML 8.3.27 | [contracts/CTR.FORMAT.PLATFORM-XML-8-3-27.md](contracts/CTR.FORMAT.PLATFORM-XML-8-3-27.md) |
 | `CTR.HOST.OPENCODE-CONFIG` | контракт · product | superseded |  | Конфигурация OpenCode получает упакованные скиллы и владельца mcp.unica | [contracts/CTR.HOST.OPENCODE-CONFIG.md](contracts/CTR.HOST.OPENCODE-CONFIG.md) |
+| `CTR.HOST.OPENCODE-LAUNCH-MODES` | контракт · product | active |  | Маркер local-debug переключает запуск на упакованный бинарник | [contracts/CTR.HOST.OPENCODE-LAUNCH-MODES.md](contracts/CTR.HOST.OPENCODE-LAUNCH-MODES.md) |
 | `CTR.HOST.OPENCODE-MCP-OWNERSHIP` | контракт · product | active |  | Конфигурационный хук владеет записью mcp.unica | [contracts/CTR.HOST.OPENCODE-MCP-OWNERSHIP.md](contracts/CTR.HOST.OPENCODE-MCP-OWNERSHIP.md) |
 | `CTR.HOST.OPENCODE-SKILLS-PATHS` | контракт · product | active |  | Упакованный корень скиллов попадает в skills.paths один раз | [contracts/CTR.HOST.OPENCODE-SKILLS-PATHS.md](contracts/CTR.HOST.OPENCODE-SKILLS-PATHS.md) |
 | `CTR.HOST.OPENCODE-STATE-PROCESS-OVERRIDES` | контракт · product | active |  | Существующие переопределения процесса выигрывают у выведенных адресов | [contracts/CTR.HOST.OPENCODE-STATE-PROCESS-OVERRIDES.md](contracts/CTR.HOST.OPENCODE-STATE-PROCESS-OVERRIDES.md) |
@@ -16,6 +17,7 @@
 | `CTR.PKG.CORE-PROVENANCE-REFUSED-BY-MISMATCH` | контракт · product | active |  | Bootstrap отвергает манифест чужого владельца ядра | [contracts/CTR.PKG.CORE-PROVENANCE-REFUSED-BY-MISMATCH.md](contracts/CTR.PKG.CORE-PROVENANCE-REFUSED-BY-MISMATCH.md) |
 | `CTR.PKG.CORE-PROVENANCE-SELECTABLE` | контракт · product | superseded |  | Происхождение ядра выбирается сборкой с одним умолчанием | [contracts/CTR.PKG.CORE-PROVENANCE-SELECTABLE.md](contracts/CTR.PKG.CORE-PROVENANCE-SELECTABLE.md) |
 | `CTR.PKG.NPM-CANDIDATE-COMPOSITION` | контракт · product | active |  | Состав npm-кандидата — тонкий корень плюс два класса добавлений | [contracts/CTR.PKG.NPM-CANDIDATE-COMPOSITION.md](contracts/CTR.PKG.NPM-CANDIDATE-COMPOSITION.md) |
+| `CTR.PKG.OPENCODE-LOCAL-DEBUG-COMPOSITION` | контракт · product | active |  | Состав local-debug кандидата — development-корень плюс маркер | [contracts/CTR.PKG.OPENCODE-LOCAL-DEBUG-COMPOSITION.md](contracts/CTR.PKG.OPENCODE-LOCAL-DEBUG-COMPOSITION.md) |
 | `CTR.WIRE.LIST-CACHE-FIELDS` | контракт · product | active |  | Современный list несёт cache-поля, legacy сохраняет прежнюю форму | [contracts/CTR.WIRE.LIST-CACHE-FIELDS.md](contracts/CTR.WIRE.LIST-CACHE-FIELDS.md) |
 | `CTR.WIRE.TOOL-SURFACE` | контракт · product | active |  | Ведомость поверхности порождается из бинаря | [contracts/CTR.WIRE.TOOL-SURFACE.md](contracts/CTR.WIRE.TOOL-SURFACE.md) |
 | `DEC.2026-08-18.ARCHITECTURE-RESET` | решение · process | active | да | Архитектура описывается заново | [decisions/2026-08-18-architecture-reset.md](decisions/2026-08-18-architecture-reset.md) |
@@ -55,6 +57,7 @@
 | `DEC.2026-08-25.NPM-DIST-TAG-PROMOTION` | решение · product | active | да | npm-выпуск OpenCode: stage → потребители → promotion | [decisions/2026-08-25-npm-dist-tag-promotion.md](decisions/2026-08-25-npm-dist-tag-promotion.md) |
 | `DEC.2026-08-25.NPM-TRUSTED-PUBLICATION` | решение · product | superseded | да | npm-выпуск OpenCode-кандидата — trusted publishing за гейтом форка | [decisions/2026-08-25-npm-trusted-publication.md](decisions/2026-08-25-npm-trusted-publication.md) |
 | `DEC.2026-08-25.OPENCODE-CONSUMER-SMOKE` | решение · product | active | да | Выпуск гейтится потребителями OpenCode минимальной версии | [decisions/2026-08-25-opencode-consumer-smoke.md](decisions/2026-08-25-opencode-consumer-smoke.md) |
+| `DEC.2026-08-25.OPENCODE-LOCAL-DEBUG-RUNTIME` | решение · product | active | да | npm-пакет OpenCode получает local-debug режим с текущим бинарником | [decisions/2026-08-25-opencode-local-debug-runtime.md](decisions/2026-08-25-opencode-local-debug-runtime.md) |
 | `DEC.2026-08-25.RULE-CLAIMS-TIGHTENED` | решение · product | active | да | Сужение заявок правил до доказанного | [decisions/2026-08-25-rule-claims-tightened.md](decisions/2026-08-25-rule-claims-tightened.md) |
 | `INV.APP.CODE-DEFINITION-READINESS` | инвариант · product | active |  | Definition не публикует ложный типизированный успех | [invariants/INV.APP.CODE-DEFINITION-READINESS.md](invariants/INV.APP.CODE-DEFINITION-READINESS.md) |
 | `INV.APP.CONFIG-SNAPSHOT` | инвариант · product | active |  | Оверлей конфигурации не меняет исходный снимок | [invariants/INV.APP.CONFIG-SNAPSHOT.md](invariants/INV.APP.CONFIG-SNAPSHOT.md) |
@@ -174,6 +177,7 @@
 | `INV.PKG.NPM-STAGING-DIST-TAG` | инвариант · product | active |  | Стадирование публикуется только под служебным dist-tag | [invariants/INV.PKG.NPM-STAGING-DIST-TAG.md](invariants/INV.PKG.NPM-STAGING-DIST-TAG.md) |
 | `INV.PKG.OLDEST-CLIENT-KEYS` | инвариант · product | active |  | Claude-контракты не используют новые необязательные ключи | [invariants/INV.PKG.OLDEST-CLIENT-KEYS.md](invariants/INV.PKG.OLDEST-CLIENT-KEYS.md) |
 | `INV.PKG.OLDEST-CLIENT-LOAD` | инвариант · product | active |  | Пакет проверяется нижней поддерживаемой версией клиента | [invariants/INV.PKG.OLDEST-CLIENT-LOAD.md](invariants/INV.PKG.OLDEST-CLIENT-LOAD.md) |
+| `INV.PKG.OPENCODE-DEV-CANDIDATE-UNPUBLISHABLE` | инвариант · product | active |  | Local-debug кандидат не доходит до npm publish | [invariants/INV.PKG.OPENCODE-DEV-CANDIDATE-UNPUBLISHABLE.md](invariants/INV.PKG.OPENCODE-DEV-CANDIDATE-UNPUBLISHABLE.md) |
 | `INV.PKG.PACKAGED-PUBLIC-SURFACE` | инвариант · product | active |  | Bootstrap проверяет два MCP lifecycle и три опорных инструмента | [invariants/INV.PKG.PACKAGED-PUBLIC-SURFACE.md](invariants/INV.PKG.PACKAGED-PUBLIC-SURFACE.md) |
 | `INV.PKG.PUBLIC-BINARY-NAME` | инвариант · product | active |  | Публичное ядро собирается как unica | [invariants/INV.PKG.PUBLIC-BINARY-NAME.md](invariants/INV.PKG.PUBLIC-BINARY-NAME.md) |
 | `INV.PKG.RETENTION-BY-ARTIFACT` | инвариант · product | active |  | Сборка мусора считает версии по артефакту | [invariants/INV.PKG.RETENTION-BY-ARTIFACT.md](invariants/INV.PKG.RETENTION-BY-ARTIFACT.md) |

@@ -15,4 +15,6 @@ supersedes: [CTR.HOST.OPENCODE-CONFIG]
 
 Запись `mcp.unica` замещается всегда: local, enabled, timeout 900000 мс,
 команда — упакованный bootstrap `run --plugin-root <корень пакета>`;
-соседние MCP-записи сохраняются.
+соседние MCP-записи сохраняются. Форма команды принадлежит пакету без
+маркера `opencode/local-debug.json`; маркерный режим запуска описывает
+`CTR.HOST.OPENCODE-LAUNCH-MODES`.

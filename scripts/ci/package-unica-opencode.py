@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Assemble the OpenCode npm candidate from the verified thin plugin root.
+"""Assemble the OpenCode npm candidate from a verified plugin root.
 
 The candidate is not a second product: it is the same thin package bytes the
 Codex and Claude Code hosts consume, plus the npm metadata and the OpenCode
 adapter entry from the tracked source. Release identity is validated before
 npm is invoked, so a development manifest or a version mismatch can never
 become a publishable tarball.
+
+A second, mutually exclusive input builds the local-debug candidate from a
+current-host plugin root (see ``--local-debug-root``): the same overlay of
+npm metadata and the OpenCode adapter, plus one generated marker file that
+switches the adapter to the packaged core binary. The local-debug candidate
+is a development artifact and is refused by the publish step.
 """
 
 from __future__ import annotations
@@ -20,6 +26,11 @@ from pathlib import Path
 
 NPM_PACKAGE_NAME = "@apshendev/unica-opencode"
 OPENCODE_ADAPTER_DIR = "opencode"
+LOCAL_DEBUG_MARKER = "local-debug.json"
+LOCAL_DEBUG_MARKER_MODE = "local-debug"
+# Имена ядра на всех целях: binaryName в lock на win-x64 — `unica` без .exe,
+# поэтому ядро опознаётся по любому из двух написаний.
+_CORE_BINARY_NAMES = ("unica", "unica.exe")
 
 
 def load_thin_packager():
@@ -130,7 +141,9 @@ def copy_npm_sources_from_tracked(
         raise SystemExit(f"tracked adapter entry not found under {plugin_src}")
 
 
-def assemble_staging(thin_root: Path, repo_root: Path, staging: Path, thin_module) -> None:
+def assemble_staging(
+    thin_root: Path, repo_root: Path, staging: Path, thin_module
+) -> None:
     if staging.exists():
         shutil.rmtree(staging)
     shutil.copytree(thin_root, staging)
@@ -154,14 +167,133 @@ def assemble_staging(thin_root: Path, repo_root: Path, staging: Path, thin_modul
             raise SystemExit(f"candidate staging contains {forbidden}")
 
 
+def validate_local_debug_input(debug_root: Path, thin_module) -> str:
+    """Проверить local-debug корень и вернуть цель текущего хоста.
+
+    Вход приходит из ``package-unica-plugin.py --local-debug-target``: его
+    манифест обязан быть development-манифестом, а ровно одна цель несёт
+    бинарник ядра, который адаптер запустит напрямую.
+    """
+    manifest_path = debug_root / "runtime-manifest.json"
+    if not manifest_path.is_file():
+        raise SystemExit(
+            f"local-debug root is missing runtime-manifest.json: {manifest_path}"
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not manifest.get("development"):
+        raise SystemExit(
+            f"{manifest_path} is not a development manifest: "
+            "--local-debug-root consumes a package-unica-plugin.py "
+            "--local-debug-target output, not a release thin root"
+        )
+    targets_with_core = sorted(
+        target
+        for target in thin_module.SUPPORTED_TARGETS
+        if any(
+            (debug_root / "bin" / target / name).is_file()
+            for name in _CORE_BINARY_NAMES
+        )
+    )
+    if not targets_with_core:
+        raise SystemExit(
+            "local-debug root carries no core binary: expected bin/<target>/unica(.exe)"
+        )
+    if len(targets_with_core) > 1:
+        raise SystemExit(
+            "local-debug root must carry exactly one host target, found: "
+            + ", ".join(targets_with_core)
+        )
+    return targets_with_core[0]
+
+
+def write_local_debug_marker(staging: Path, target: str, version: str) -> None:
+    marker_path = staging / OPENCODE_ADAPTER_DIR / LOCAL_DEBUG_MARKER
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    marker_path.write_text(
+        json.dumps(
+            {
+                "mode": LOCAL_DEBUG_MARKER_MODE,
+                "target": target,
+                "pluginVersion": version,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def assemble_local_debug_staging(
+    debug_root: Path, repo_root: Path, staging: Path, thin_module
+) -> None:
+    if staging.exists():
+        shutil.rmtree(staging)
+    shutil.copytree(debug_root, staging)
+    plugin_src = repo_root / "plugins" / "unica"
+    copy_npm_sources_from_tracked(repo_root, plugin_src, staging, thin_module)
+
+    readme_src = staging / OPENCODE_ADAPTER_DIR / "README.md"
+    if not readme_src.is_file():
+        raise SystemExit(f"OpenCode installation guide not found: {readme_src}")
+    shutil.copy2(readme_src, staging / "README.md")
+
+    for ignore_name in (".gitignore", ".npmignore"):
+        for ignore_path in sorted(staging.rglob(ignore_name)):
+            ignore_path.unlink()
+    for forbidden in ("node_modules", "package-lock.json"):
+        if (staging / forbidden).exists():
+            raise SystemExit(f"candidate staging contains {forbidden}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", type=Path, default=Path("."))
-    parser.add_argument("--thin-root", type=Path, required=True)
+    parser.add_argument("--thin-root", type=Path)
+    parser.add_argument("--local-debug-root", type=Path)
     parser.add_argument("--out-dir", type=Path, required=True)
     args = parser.parse_args()
 
+    if (args.thin_root is None) == (args.local_debug_root is None):
+        raise SystemExit(
+            "exactly one input root is required: --thin-root for a release "
+            "candidate or --local-debug-root for a current-host development "
+            "candidate"
+        )
+
     repo_root = args.repo_root.resolve()
+    thin_module = load_thin_packager()
+
+    if args.local_debug_root is not None:
+        debug_root = args.local_debug_root.resolve()
+        if not debug_root.is_dir():
+            raise SystemExit(f"local-debug plugin root not found: {debug_root}")
+        load_source_package(repo_root)
+        target = validate_local_debug_input(debug_root, thin_module)
+
+        out_dir = args.out_dir.resolve()
+        staging = out_dir / "staging"
+        assemble_local_debug_staging(debug_root, repo_root, staging, thin_module)
+        version = json.loads((staging / "package.json").read_text(encoding="utf-8"))[
+            "version"
+        ]
+        write_local_debug_marker(staging, target, version)
+        thin_module.assert_archive_clean(staging)
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        run(
+            [
+                "npm",
+                "pack",
+                "--json",
+                "--ignore-scripts",
+                "--pack-destination",
+                str(out_dir),
+            ],
+            cwd=staging,
+        )
+        return
+
     thin_root = args.thin_root.resolve()
     if not thin_root.is_dir():
         raise SystemExit(f"thin plugin root not found: {thin_root}")

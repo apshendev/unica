@@ -7,7 +7,14 @@
 // launching the packaged native bootstrap directly. Runtime download,
 // verification, and caching stay in the bootstrap: they are not reimplemented
 // here (DEC.2026-08-24.OPENCODE-ADAPTER-DELIVERY).
+//
+// A local-debug candidate carries the generated marker `opencode/
+// local-debug.json` (CTR.HOST.OPENCODE-LAUNCH-MODES): with a valid marker
+// the MCP entry launches the packaged current-host core binary directly
+// instead of the bootstrap. A missing or unparsable marker keeps the release
+// behavior.
 
+import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -16,6 +23,7 @@ const PACKAGE_ROOT = toPosix(
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
 )
 const SKILLS_ROOT = `${PACKAGE_ROOT}/skills`
+const LOCAL_DEBUG_MARKER = `${PACKAGE_ROOT}/opencode/local-debug.json`
 
 // The MCP timeout covers connection startup as well as requests in the
 // supported OpenCode API, so the verified cold runtime acquisition of the
@@ -30,8 +38,47 @@ const PROVIDER_STATE_ENV = "UNICA_PROVIDER_STATE_DIR"
 // Function declarations hoist, so calling hostTarget() here is valid.
 const HOST_TARGET = hostTarget()
 
+// The marker is read once at initialization. A local-debug candidate always
+// carries a well-formed marker; anything else — absent file, broken JSON, a
+// foreign shape — is treated as the release package.
+const LOCAL_DEBUG = validateLocalDebugTarget(readLocalDebugMarker(), HOST_TARGET)
+
 function toPosix(value) {
   return value.split("\\").join("/")
+}
+
+function validateLocalDebugTarget(marker, host) {
+  if (marker === null) {
+    return marker
+  }
+  if (marker.target !== host.target) {
+    // Init-time refusal: the hook never runs, so the configuration object
+    // stays byte-for-byte what the host passed in.
+    throw new Error(
+      `@apshendev/unica-opencode local-debug candidate targets ` +
+        `${marker.target}, but this host is ${host.target}: refusing to ` +
+        `launch a foreign core binary.`,
+    )
+  }
+  return marker
+}
+
+function readLocalDebugMarker() {
+  let raw
+  try {
+    raw = fs.readFileSync(LOCAL_DEBUG_MARKER, "utf8")
+  } catch {
+    return null
+  }
+  try {
+    const marker = JSON.parse(raw)
+    if (marker && marker.mode === "local-debug" && typeof marker.target === "string") {
+      return marker
+    }
+  } catch {
+    // A corrupt marker cannot prove the mode: fall back to the release path.
+  }
+  return null
 }
 
 // Only Windows x64 and Linux x64 are part of the OpenCode support promise.
@@ -92,15 +139,42 @@ function installSkills(config) {
   }
 }
 
+// The packaged core binary name: the release pipeline writes `unica.exe` on
+// win-x64, while a hand-assembled debug root may carry the extension-less
+// spelling. The launcher uses the first name that exists.
+function coreBinary(target) {
+  const names = target === "win-x64" ? ["unica.exe", "unica"] : ["unica"]
+  for (const name of names) {
+    const candidate = path.join(PACKAGE_ROOT, "bin", target, name)
+    if (fs.existsSync(candidate)) {
+      return toPosix(candidate)
+    }
+  }
+  throw new Error(
+    `@apshendev/unica-opencode local-debug candidate is missing its core ` +
+      `binary: expected bin/${target}/unica(.exe) under the package root.`,
+  )
+}
+
 function installMcp(config) {
   const mcp = config.mcp ?? (config.mcp = {})
   const { target, executable } = HOST_TARGET
-  const bootstrap = toPosix(
-    path.join(PACKAGE_ROOT, "bootstrap", "bin", target, executable),
-  )
   // The adapter owns `unica` and always replaces the value present when its
   // hook runs, so a stale or incompatible user entry cannot keep the packaged
   // server from starting. Every other MCP entry stays untouched.
+  if (LOCAL_DEBUG) {
+    mcp.unica = {
+      type: "local",
+      command: [coreBinary(target)],
+      environment: bootstrapEnvironment(),
+      enabled: true,
+      timeout: MCP_TIMEOUT_MS,
+    }
+    return
+  }
+  const bootstrap = toPosix(
+    path.join(PACKAGE_ROOT, "bootstrap", "bin", target, executable),
+  )
   mcp.unica = {
     type: "local",
     command: [bootstrap, "run", "--plugin-root", PACKAGE_ROOT],

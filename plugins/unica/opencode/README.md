@@ -10,10 +10,13 @@
 `.tgz` (раздел ниже). Раздел «Установка из npm» вступает в силу после первой
 публикации.
 
-## Локальная проверка собранного пакета
+## Локальная проверка собранного пакета (release-кандидат)
 
-Полная процедура рассчитана на OpenCode `1.18.22` или новее и повторяет
-проверенный рецепт локального тестирования выпуска.
+Проверяет выпускной артефакт: thin-корень tag-run выпуска плюс текущие npm-метаданные
+и адаптер. Полная процедура рассчитана на OpenCode `1.18.22` или новее и повторяет
+проверенный рецепт локального тестирования выпуска. Чтобы проверить текущий Rust-код
+форка, а не закреплённый выпуск, используйте рецепт «Локальная проверка текущего
+checkout (local-debug)» ниже.
 
 1. Соберите `.tgz` упаковщиком `scripts/ci/package-unica-opencode.py` от
    thin-корня артефакта tag-run выпуска (см. план
@@ -59,6 +62,53 @@
 runtime с нуля (подробности в разделе «Первый запуск и кеши»). Это ожидаемое
 поведение холодной доставки, а не зависание.
 
+## Локальная проверка текущего checkout (local-debug)
+
+Проверяет текущее состояние форка: адаптер, навыки и ядро `unica` собираются из
+рабочего дерева, без закреплённого выпуска и без bootstrap-доставки runtime
+(проектная записка `docs/design/2026-08-25-opencode-local-debug-runtime-design.md`,
+решение `DEC.2026-08-25.OPENCODE-LOCAL-DEBUG-RUNTIME`).
+
+1. Соберите tool-bundle текущей цели (требуется Rust с MSVC-тулчейном; на
+   win-x64 выходит `bin/win-x64/unica.exe`):
+   ```sh
+   python scripts/ci/build-unica-tools.py \
+     --repo-root . \
+     --target win-x64 \
+     --lock-file plugins/unica/third-party/tools.lock.json \
+     --out-dir .build/opencode-local-debug/tool-bundles \
+     --work-dir .build/opencode-local-debug/tool-work
+   ```
+2. Соберите local-debug корень плагина текущей цели:
+   ```sh
+   python scripts/ci/package-unica-plugin.py \
+     --repo-root . \
+     --tools-root .build/opencode-local-debug/tool-bundles \
+     --lock-file plugins/unica/third-party/tools.lock.json \
+     --out-dir .build/opencode-local-debug/package \
+     --local-debug-target win-x64
+   ```
+3. Соберите `.tgz` npm-кандидата от local-debug корня (взаимоисключаемо с
+   `--thin-root`):
+   ```sh
+   python scripts/ci/package-unica-opencode.py \
+     --repo-root . \
+     --local-debug-root .build/opencode-local-debug/package/marketplace/plugins/unica \
+     --out-dir .build/opencode-local-debug/npm
+   ```
+4. Шаги 2–6 рецепта release-кандидата выше без изменений: каталог-потребитель,
+   `npm install --ignore-scripts <абсолютный путь к .tgz>`, `file://` URI
+   установленного пакета в `opencode.json`, изоляция окружения, полный
+   перезапуск OpenCode и наблюдения `opencode debug skill` / `opencode mcp list`.
+
+Отличия от release-кандидата: упаковщик записывает маркер
+`opencode/local-debug.json`, по которому адаптер запускает упакованное ядро
+`bin/<target>/unica(.exe)` напрямую — bootstrap не используется, ядро runtime
+не скачивается, и `opencode mcp list` показывает команду установленного
+бинарника вместо bootstrap. Маркер с чужой целью (например, `linux-x64` на
+Windows-хосте) даёт явный отказ при инициализации. Такой кандидат —
+development-сборка: публикация в npm отказывает ему до первого вызова npm.
+
 ## Установка из npm
 
 Раздел вступает в силу после первой публикации пакета. Добавьте пакет в массив
@@ -84,7 +134,10 @@ runtime с нуля (подробности в разделе «Первый з�
   сохраняются;
 - запускает упакованный native bootstrap напрямую
   (`unica-bootstrap run --plugin-root <корень пакета>`), который проверяет
-  закреплённый runtime (хеши архива и файлов) перед запуском `unica`.
+  закреплённый runtime (хеши архива и файлов) перед запуском `unica`;
+- в пакете с маркером `opencode/local-debug.json` вместо bootstrap запускает
+  упаковленное ядро `bin/<target>/unica(.exe)` напрямую
+  (`CTR.HOST.OPENCODE-LAUNCH-MODES`).
 
 Адаптер не оборачивает инструменты `unica.*` как нативные инструменты OpenCode и
 не добавляет других хуков.

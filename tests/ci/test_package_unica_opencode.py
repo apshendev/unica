@@ -350,6 +350,233 @@ class OpenCodePackageCandidateTests(unittest.TestCase):
         self.assertIn("bootstrap", str(ctx.exception))
         self.assertEqual(runs, [])
 
+    # --- local-debug режим: кандидат из текущего хоста -------------------
+
+    def build_local_debug_root(self, *, target: str = "win-x64") -> Path:
+        """Построить настоящий local-debug корень реальным thin-упаковщиком.
+
+        Повторяет приемлемый минимум fixtures `test_package_unica_plugin.py`
+        (см. test_local_debug_mode_remains_current_host_only...): bundle с
+        поддельными бинарниками всех залоченных инструментов + core.
+        """
+        thin_module = load_thin_packager()
+        lock = json.loads(
+            (REPO_ROOT / "plugins/unica/third-party/tools.lock.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        triple = lock["targets"][target]["targetTriple"]
+        bundle = self.root / "debug-tools" / f"unica-tools-{target}"
+        bin_dir = bundle / "bin" / target
+        bin_dir.mkdir(parents=True)
+        tools = []
+        for locked in lock["tools"]:
+            binary = bin_dir / locked["binaryName"]
+            binary.write_bytes(locked["name"].encode())
+            tools.append(
+                {
+                    "name": locked["name"],
+                    "version": locked["version"],
+                    "repository": locked["repository"],
+                    "upstreamUrl": f"{locked['repository']}/releases/tag/{locked['sourceTag']}",
+                    "sourceTag": locked["sourceTag"],
+                    "sourceCommit": locked["sourceCommit"],
+                    "license": locked["license"],
+                    "targetTriple": triple,
+                    "binaryPath": f"bin/{target}/{locked['binaryName']}",
+                    "sha256": thin_module.sha256(binary),
+                }
+            )
+        core_exe = "unica.exe" if target == "win-x64" else "unica"
+        core = bin_dir / core_exe
+        core.write_bytes(b"current-host unica core")
+        locked_core = next(
+            locked for locked in lock["tools"] if locked["name"] == "unica"
+        )
+        tools.append(
+            {
+                "name": "unica",
+                "version": locked_core["version"],
+                "repository": locked_core["repository"],
+                "upstreamUrl": f"{locked_core['repository']}/releases/tag/{locked_core['sourceTag']}",
+                "sourceTag": locked_core["sourceTag"],
+                "sourceCommit": locked_core["sourceCommit"],
+                "license": locked_core["license"],
+                "targetTriple": triple,
+                "binaryPath": f"bin/{target}/{core_exe}",
+                "sha256": thin_module.sha256(core),
+            }
+        )
+        (bundle / "tools.json").write_text(
+            json.dumps({"target": target, "targetTriple": triple, "tools": tools}),
+            encoding="utf-8",
+        )
+        out_dir = self.root / "debug-plugin-out"
+        argv = [
+            "package-unica-plugin.py",
+            "--repo-root",
+            str(REPO_ROOT),
+            "--tools-root",
+            str(self.root / "debug-tools"),
+            "--lock-file",
+            "plugins/unica/third-party/tools.lock.json",
+            "--out-dir",
+            str(out_dir),
+            "--local-debug-target",
+            target,
+        ]
+        with patch("sys.argv", argv):
+            thin_module.main()
+        return out_dir / "marketplace" / "plugins" / "unica"
+
+    def package_local_debug(self, debug_root: Path, out_dir: Path, *, runs) -> None:
+        module = load_opencode_packager()
+        argv = [
+            "package-unica-opencode.py",
+            "--repo-root",
+            str(REPO_ROOT),
+            "--local-debug-root",
+            str(debug_root),
+            "--out-dir",
+            str(out_dir),
+        ]
+        with patch("sys.argv", argv):
+            if runs is None:
+                module.main()
+            else:
+                with patch.object(
+                    module,
+                    "run",
+                    side_effect=lambda cmd, *, cwd=None: runs.append((cmd, cwd)),
+                ):
+                    module.main()
+
+    def test_local_debug_candidate_carries_current_host_binaries_and_marker(
+        self,
+    ) -> None:
+        debug_root = self.build_local_debug_root()
+        out_dir = self.root / "debug-npm-out"
+        runs: list = []
+
+        self.package_local_debug(debug_root, out_dir, runs=runs)
+
+        staging = out_dir / "staging"
+        self.assertEqual(len(runs), 1)
+        cmd, cwd = runs[0]
+        self.assertEqual(cmd[:2], ["npm", "pack"])
+        self.assertEqual(cwd, staging)
+
+        # Вход доезжает теми же байтами, кроме классов переноса, описанных
+        # контрактом CTR.PKG.OPENCODE-LOCAL-DEBUG-COMPOSITION.
+        def inventory(root: Path) -> dict[str, bytes]:
+            return {
+                path.relative_to(root).as_posix(): path.read_bytes()
+                for path in sorted(root.rglob("*"))
+                if path.is_file()
+            }
+
+        source_files = inventory(debug_root)
+        staged_files = inventory(staging)
+        carried = set(source_files) & set(staged_files)
+        transformed = {
+            name for name in carried if source_files[name] != staged_files[name]
+        }
+        removed = set(source_files) - set(staged_files)
+        added = set(staged_files) - set(source_files)
+
+        self.assertEqual(transformed, {"README.md"})
+        self.assertEqual(
+            removed,
+            {
+                name
+                for name in source_files
+                if Path(name).name in {".gitignore", ".npmignore"}
+            },
+        )
+        thin_module = load_thin_packager()
+        tracked = thin_module.git_tracked_plugin_files(REPO_ROOT, PLUGIN_SOURCE)
+        expected_additions = {"package.json", "opencode/local-debug.json"} | {
+            rel for rel in tracked if Path(rel).parts[0] == "opencode"
+        }
+        self.assertEqual(added, expected_additions)
+
+        # Текущий бинарник ядра присутствует; tracked bootstrap/launch.sh
+        # доезжает, но бинарной матрицы bootstrap в local-debug кандидате нет.
+        self.assertIn("bin/win-x64/unica", staged_files)
+        self.assertFalse(
+            any(name.startswith("bootstrap/bin/") for name in staged_files)
+        )
+
+        # Маркер — единственная сгенерированная строка режима: он называет
+        # режим, цель и версию пакета, с которым собран кандидат.
+        marker = json.loads(staged_files["opencode/local-debug.json"])
+        self.assertEqual(marker["mode"], "local-debug")
+        self.assertEqual(marker["target"], "win-x64")
+        self.assertEqual(
+            marker["pluginVersion"],
+            json.loads(staged_files["package.json"].decode("utf-8"))["version"],
+        )
+
+    def test_a_release_root_is_refused_as_local_debug_input(self) -> None:
+        thin_root, _version = self.build_thin_root()
+        runs: list = []
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.package_local_debug(
+                thin_root, self.root / "debug-release-out", runs=runs
+            )
+
+        self.assertIn("development", str(ctx.exception))
+        self.assertEqual(runs, [])
+
+    def test_local_debug_input_without_a_core_binary_is_refused(self) -> None:
+        debug_root = self.build_local_debug_root()
+        # На win-x64 binaryName ядра из lock — `unica` без суффикса.
+        for name in ("unica", "unica.exe"):
+            core = debug_root / "bin" / "win-x64" / name
+            if core.is_file():
+                core.unlink()
+        runs: list = []
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.package_local_debug(
+                debug_root, self.root / "debug-nobin-out", runs=runs
+            )
+
+        self.assertIn("core binary", str(ctx.exception))
+        self.assertEqual(runs, [])
+
+    def test_both_candidate_inputs_at_once_are_refused(self) -> None:
+        thin_root, _version = self.build_thin_root()
+        debug_root = self.build_local_debug_root()
+        module = load_opencode_packager()
+        argv = [
+            "package-unica-opencode.py",
+            "--repo-root",
+            str(REPO_ROOT),
+            "--thin-root",
+            str(thin_root),
+            "--local-debug-root",
+            str(debug_root),
+            "--out-dir",
+            str(self.root / "both-out"),
+        ]
+        runs: list = []
+
+        with (
+            patch("sys.argv", argv),
+            self.assertRaises(SystemExit) as ctx,
+            patch.object(
+                module,
+                "run",
+                side_effect=lambda cmd, *, cwd=None: runs.append((cmd, cwd)),
+            ),
+        ):
+            module.main()
+
+        self.assertIn("--thin-root", str(ctx.exception))
+        self.assertEqual(runs, [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -369,6 +369,42 @@ class OpenCodeNpmPublicationTests(unittest.TestCase):
         self.assertIn("npm publish failed", str(ctx.exception))
         self.assertEqual(downloads, [])
 
+    def test_a_local_debug_candidate_is_refused_before_publish(self) -> None:
+        """Development-кандидат не доезжает до первого вызова npm.
+
+        Маркер и development-манифест — два независимых доказательства
+        local-debug природы staging: каждое отказывает само по себе, до
+        валидации гейтов и до каких-либо обращений к npm.
+        """
+        staging = self.npm_root / "staging"
+        marker = staging / "opencode" / "local-debug.json"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(
+            json.dumps(
+                {"mode": "local-debug", "target": "win-x64", "pluginVersion": "0.12.0"}
+            ),
+            encoding="utf-8",
+        )
+        process = FakeProcess({})
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_publish_step(process)
+
+        self.assertIn("local-debug", str(ctx.exception))
+        self.assertEqual(process.calls, [])
+
+        # Development-манифест отказывает тем же механизмом и без маркера.
+        marker.unlink()
+        manifest_path = staging / "runtime-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["development"] = True
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_publish_step(FakeProcess({}))
+
+        self.assertIn("development", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
