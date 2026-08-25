@@ -231,6 +231,8 @@ cargo test -p unica-bootstrap --test manifest_contract   # default-ветка т
 
 `.build/` и `dist/` не коммитить.
 
+> [2026-08-25 12:02] Выполнено: артефакт run 32766639619 скачан; sanity пройден (`pluginVersion == 0.12.0`, `release.tag == v0.12.0`, совпадение с `plugins/unica/package.json`); собран `dist/local-opencode/apshendev-unica-opencode-0.12.0.tgz` (5 043 638 байт, 161 entry, bootstrap-матрица 3 платформ). `.build/` и `dist/` не закоммичены.
+
 ---
 
 ## Шаг 5. Проверка настоящим OpenCode 1.18.22 (ручной, без изменений репозитория)
@@ -375,6 +377,8 @@ $pluginRoot = Join-Path `
 зафиксировать точный текст ошибки и вернуться на согласование — самовольно
 менять форму экспорта нельзя.
 
+> [2026-08-25 12:35] Выполнено частично, блокировано внешним расхождением. Доказано: OpenCode 1.18.22 загрузил адаптер из установленного `.tgz` (форма экспорта принята); `verify-skills` OK (`--plugin-root` на установленный пакет); `verify-mcp` разобрал реальный вывод, нашёл блок `unica` с командой bootstrap из `node_modules\@apshendev\unica-opencode`; собственная проверка целостности bootstrap сработала. Блокер: bootstrap отказался по checksum — sha256 всех трёх runtime-архивов в thin-манифесте run 32766639619 (`dc090553…`/`e8fb673f…`/`c0bb6b3e…`) не совпадают с байтами, опубликованными в релизе v0.12.0 (metadata релиза: `d1fc9ffe…`/`fdea1e1f…`/`3fc92984…`; ассеты не пере-заливались после 2026-08-16, run — 2026-08-24). По инструкции шага 4 («остановиться и сообщить; другой run самостоятельно не выбирать») ожидает решения пользователя. Попутное: первая попытка наблюдения ошибочно прошла без изоляции env (создала один пустой lock в `%LOCALAPPDATA%\opencode\unica` — удалён); повторная попытка выполнена изолированно.
+
 ---
 
 ## Финальная проверка всего changeset
@@ -388,6 +392,8 @@ python -m unittest tests.ci.test_build_unica_tools -v
 python -m py_compile scripts/ci/*.py tests/ci/*.py
 cargo test -p unica-bootstrap --test manifest_contract
 ```
+
+> [2026-08-25 12:50] Выполнено: профильные сьюты 12/10/7/41/17 OK; `py_compile` по всем `scripts/ci/*.py` и `tests/ci/*.py` OK; `cargo test -p unica-bootstrap --test manifest_contract` 23/23. Полный `unittest discover -s tests/ci`: 690 тестов, 14 failures / 36 errors — счётчики побайтово совпадают с базовым коммитом `624d6ef8` (686 тестов, 14/36 в временном worktree), т.е. новых падений нет, существующие — окруженческие (Windows-хост, `CreateProcess` WinError 2). `tests/arch` 117/117, `registry.py --check`, `fate.py`, `immutability.py --base 624d6ef8` — OK.
 
 ## Что не трогать
 
