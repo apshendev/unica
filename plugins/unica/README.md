@@ -45,7 +45,7 @@ OpenCode is served by a separate npm package, `@apshendev/unica-opencode`.
 The package is currently a local candidate: the npm publication is being
 prepared, and the working way today is local verification of an assembled
 `.tgz`. The full guide lives in
-[`plugins/unica/opencode/README.md`](opencode/README.md).
+[plugins/unica/opencode/README.md](https://github.com/apshendev/unica/blob/main/plugins/unica/opencode/README.md).
 
 ## Legacy transition boundary
 

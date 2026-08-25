@@ -1030,6 +1030,110 @@ class ReferenceTests(unittest.TestCase):
         self.assertEqual(offenders, [])
 
 
+class WidenedRuleSuccessionTests(unittest.TestCase):
+    """Десять расширительных записей ревью заменены узкими преемниками.
+
+    Ревью нашло записи, чья формулировка шире их единственной проверки.
+    Ответ реестра — не редактирование тел, а штамп с преемниками: каждый
+    преемник заявляет один независимо нарушаемый контракт с одним
+    разрешимым адресом проверки. Этот тест держит отображение целиком: ни
+    одна старая запись не забыта, ни одного лишнего преемника нет.
+    """
+
+    WIDENED_TO_SUCCESSORS = {
+        "CTR.PKG.CORE-PROVENANCE-SELECTABLE": (
+            "CTR.PKG.CORE-PROVENANCE-BY-BUILD-INPUT",
+            "CTR.PKG.CORE-PROVENANCE-DEFAULT-ADDRESSES",
+            "CTR.PKG.CORE-PROVENANCE-REFUSED-BY-MISMATCH",
+        ),
+        "CTR.HOST.OPENCODE-CONFIG": (
+            "CTR.HOST.OPENCODE-MCP-OWNERSHIP",
+            "CTR.HOST.OPENCODE-SKILLS-PATHS",
+            "CTR.HOST.OPENCODE-STATE-PROCESS-OVERRIDES",
+            "CTR.HOST.OPENCODE-STATE-XDG-DERIVATION",
+            "CTR.HOST.OPENCODE-STATE-WINDOWS-DERIVATION",
+        ),
+        "INV.PKG.VERSION-LOCKSTEP": (
+            "INV.PKG.VERSION-DECLARED-LOCKSTEP",
+            "INV.PKG.VERSION-BUMP-COMPLETE",
+            "INV.PKG.VERSION-BUMP-ATOMIC",
+        ),
+        "INV.HOST.OPENCODE-PLATFORM-GATE": ("INV.HOST.OPENCODE-PLATFORM-REFUSAL",),
+        "INV.PKG.NPM-PUBLICATION-GATE": (
+            "INV.PKG.NPM-PUBLICATION-FORK-TAG-OIDC",
+            "INV.CI.NPM-FORK-ONLY-CONTOUR",
+            "INV.PKG.NPM-STAGING-DIST-TAG",
+        ),
+        "INV.PKG.NPM-RERUN-INTEGRITY": (
+            "INV.PKG.NPM-RERUN-BYTE-IDENTITY",
+            "INV.PKG.NPM-REGISTRY-VISIBILITY",
+        ),
+        "INV.CI.OPENCODE-CONSUMER-SMOKE": (
+            "INV.CI.OPENCODE-CONSUMER-INSTALLED-ROOT",
+            "INV.CI.OPENCODE-CONSUMER-WINDOWS-BLOCKS",
+            "INV.CI.OPENCODE-CONSUMER-LINUX-BEST-EFFORT",
+        ),
+        "INV.HOST.OPENCODE-CLIENT-FLOOR": (
+            "INV.HOST.OPENCODE-CLIENT-FLOOR-DOCUMENTED",
+        ),
+        "INV.HOST.OPENCODE-SHARED-SURFACE": ("INV.HOST.OPENCODE-SINGLE-CONFIG-HOOK",),
+        "INV.PKG.NPM-CANDIDATE-FROM-THIN-ROOT": (
+            "CTR.PKG.NPM-CANDIDATE-COMPOSITION",
+            "INV.PKG.NPM-CANDIDATE-DEV-MANIFEST-REFUSED",
+            "INV.PKG.NPM-CANDIDATE-VERSION-REFUSED",
+            "INV.PKG.NPM-CANDIDATE-BOOTSTRAP-REFUSED",
+        ),
+    }
+
+    def test_the_ten_widened_rules_are_replaced_by_narrow_successors(self) -> None:
+        by_id = {record.id: record for record in REGISTRY.records()}
+        self.assertEqual(len(self.WIDENED_TO_SUCCESSORS), 10)
+        offenders = []
+        for older, successors in self.WIDENED_TO_SUCCESSORS.items():
+            with self.subTest(widened=older):
+                replaced = by_id.get(older)
+                if replaced is None:
+                    offenders.append(f"{older}: record is missing")
+                    continue
+                if replaced.props.get("status") != "superseded":
+                    offenders.append(
+                        f"{older}: status {replaced.props.get('status')!r}"
+                    )
+                if list(replaced.props.get("superseded-by") or []) != list(successors):
+                    offenders.append(
+                        f"{older}: superseded-by {replaced.props.get('superseded-by')}"
+                    )
+                claimed_back = sorted(
+                    record.id
+                    for record in REGISTRY.records()
+                    if older in (record.props.get("supersedes") or [])
+                )
+                if claimed_back != sorted(successors):
+                    offenders.append(f"{older}: supersedes claims {claimed_back}")
+                checks = []
+                for successor_id in successors:
+                    successor = by_id.get(successor_id)
+                    if successor is None:
+                        offenders.append(f"{successor_id}: successor is missing")
+                        continue
+                    if successor.props.get("status") != "active":
+                        offenders.append(
+                            f"{successor_id}: status {successor.props.get('status')!r}"
+                        )
+                    checks.append(successor.props.get("check") or "")
+                    error = evidence_reference_error(
+                        REPO_ROOT,
+                        checks[-1],
+                        successor.relative,
+                        require_executable=True,
+                    )
+                    if error:
+                        offenders.append(error)
+                if len(set(checks)) != len(checks):
+                    offenders.append(f"{older}: successors share one address")
+        self.assertEqual(offenders, [])
+
+
 class AtomicityTests(unittest.TestCase):
     def test_artifact_cache_decision_keys_the_path_by_artifact(self) -> None:
         """One archive shared by two tools must still have one cache root."""

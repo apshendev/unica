@@ -882,6 +882,11 @@ INV.PKG.VERSION-BUMP-ATOMIC]`. Front matter:
 | `INV.PKG.VERSION-BUMP-COMPLETE` | тот же | `tests/ci/test_version_contract.py::test_bump_updates_every_contract_location` | [pkg, product] |
 | `INV.PKG.VERSION-BUMP-ATOMIC` | тот же | `tests/ci/test_version_contract.py::test_a_render_failure_leaves_every_contract_file_untouched` | [pkg, product] |
 
+> Выполнено: 2026-08-25 17:12 (5.1 — оба теста добавлены и немедленно зелёные,
+> как план и предсказывал (R10): красный воспроизвести нельзя, дефект —
+> недостающее доказательство; атомарность теперь subTest по всем пяти
+> локациям со снапшотом байтов; test_version_contract — Ran 18 OK)
+
 ### 5.2. OPENCODE-CONFIG → пять контрактов
 
 Штамп `CTR.HOST.OPENCODE-CONFIG` → пять преемников. Front matter (у каждого
@@ -898,6 +903,10 @@ DEC.2026-08-25.RULE-CLAIMS-TIGHTENED`, `supersedes` не указан в таб�
 | `CTR.HOST.OPENCODE-STATE-XDG-DERIVATION` | `tests/ci/test_opencode_adapter.py::test_locations_are_derived_from_the_cache_home_when_unset` | [host, pkg] | 1; тот же; [host, docs] |
 | `CTR.HOST.OPENCODE-STATE-WINDOWS-DERIVATION` | `tests/ci/test_opencode_adapter.py::test_windows_locations_derive_from_localappdata` | [host, pkg] | 1; тот же; [host, docs] |
 
+> Выполнено: 2026-08-25 17:12 (5.2 — штамп CTR.HOST.OPENCODE-CONFIG и пять
+> контрактов-преемников; все пять адресов проверок существовали и остались
+> зелёными; test_opencode_adapter — Ran 10 OK)
+
 ### 5.3. PLATFORM-GATE → отказ
 
 Штамп `INV.HOST.OPENCODE-PLATFORM-GATE` →
@@ -906,6 +915,10 @@ DEC.2026-08-25.RULE-CLAIMS-TIGHTENED`, `supersedes` не указан в таб�
 `tests/ci/test_opencode_adapter.py::test_unsupported_platforms_fail_during_initialization`;
 scope [host, platform]). Заявка — только отказ неподдерживаемым комбинациям;
 положительный выбор платформ — проза решения.
+
+> Выполнено: 2026-08-25 17:12 (5.3 — штамп INV.HOST.OPENCODE-PLATFORM-GATE и
+> INV.HOST.OPENCODE-PLATFORM-REFUSAL; положительный выбор платформ — проза
+> решения)
 
 ### 5.4. CORE-PROVENANCE → три контракта
 
@@ -920,6 +933,10 @@ scope [host, platform]). Заявка — только отказ неподде
 «Третий адрес требует новой записи» остаётся прозой решения
 `DEC.2026-08-24.CORE-PROVENANCE-NAMED-BY-BUILD` (не переписывается).
 
+> Выполнено: 2026-08-25 17:12 (5.4 — штамп CTR.PKG.CORE-PROVENANCE-SELECTABLE
+> и три контракта-преемника, включая Rust-адрес manifest_contract.rs;
+> test_package_unica_plugin — Ran 43 OK)
+
 ### 5.5. CLIENT-FLOOR → документированный пол
 
 Штамп `INV.HOST.OPENCODE-CLIENT-FLOOR` →
@@ -930,6 +947,9 @@ scope [host, platform]). Заявка — только отказ неподде
 2 и 5; scope [host, docs]). Заявка — только задокументированный минимум;
 утверждение об отсутствии потолка остаётся прозой решения.
 
+> Выполнено: 2026-08-25 17:12 (5.5 — штамп INV.HOST.OPENCODE-CLIENT-FLOOR и
+> INV.HOST.OPENCODE-CLIENT-FLOOR-DOCUMENTED; имя check сохранено с этапа 2)
+
 ### 5.6. SHARED-SURFACE → форма экспорта
 
 Штамп `INV.HOST.OPENCODE-SHARED-SURFACE` →
@@ -938,6 +958,10 @@ scope [host, platform]). Заявка — только отказ неподде
 `tests/ci/test_opencode_adapter.py::test_the_module_exports_one_plugin_whose_only_hook_is_config`;
 scope [host, wire]). Заявка — один плагин, единственный хук `config`;
 происхождение общей поставки и отсутствие нативных обёрток — проза решения.
+
+> Выполнено: 2026-08-25 17:12 (5.6 — штамп INV.HOST.OPENCODE-SHARED-SURFACE и
+> INV.HOST.OPENCODE-SINGLE-CONFIG-HOOK; происхождение общей поставки — проза
+> решения)
 
 ### 5.7. NPM-CANDIDATE → четыре контракта (R3)
 
@@ -968,6 +992,18 @@ scope [host, wire]). Заявка — один плагин, единствен�
 Правила копирования npm-источников из отслеживаемых файлов без симлинков —
 проза решения.
 
+> Выполнено: 2026-08-25 17:12 (5.7 — штамп INV.PKG.NPM-CANDIDATE-FROM-THIN-ROOT
+> на CTR.PKG.NPM-CANDIDATE-COMPOSITION + три refusal-инварианта;
+> test_the_candidate_carries_the_thin_root_plus_npm_metadata переписан в полную
+> инвентаризацию. Найден и закрыт тестом третий класс намеренных отличий,
+> пропущенный прозой плана: тонкий корень несёт VCS-ignore файлы
+> (skills/.gitignore), упаковщик сознательно удаляет их из staging; удаления —
+> ровно ignore-файлы; зафиксировано в дизайн-документе. Попутно найден и
+> исправлен дефект этапа 2: бэктик-путь plugins/unica/opencode/README.md в
+> README плагина ломал test_all_active_packaged_documentation_links (упаковщик
+> исключает opencode/ из тонкого пакета, ссылка ведёт на GitHub;
+> тест этапа 2 на литерал сохранён); Ran 11 OK)
+
 ### 5.8. Проверка этапа
 
 ```text
@@ -984,6 +1020,14 @@ python scripts/arch/immutability.py --base upstream/main
 
 `test_every_rule_names_a_check_that_exists` обязан пройти: исторические
 check заменённых записей и решений сохранены.
+
+> Выполнено: 2026-08-25 17:12 (5.8 — version_contract 18 OK, opencode_adapter
+> 10 OK, package_unica_opencode 11 OK, package_unica_plugin 43 OK (5
+> POSIX-skip — прежние), tests/arch Ran 123 OK, registry --check OK, fate 233
+> subjects, immutability origin/main 218 + upstream/main 205 — зелёные;
+> агрегатный тест test_the_ten_widened_rules_are_replaced_by_narrow_successors
+> написал RED → GREEN; DEC.2026-08-25.RULE-CLAIMS-TIGHTENED + 18 преемников +
+> дизайн-документ; arch/index.md перегенерирован)
 
 ---
 

@@ -1,10 +1,11 @@
 ---
 id: INV.PKG.NPM-CANDIDATE-FROM-THIN-ROOT
-status: active
+status: superseded
 governs: product
 decision: DEC.2026-08-24.OPENCODE-ADAPTER-DELIVERY
 check: tests/ci/test_package_unica_opencode.py::test_the_packed_tarball_carries_the_candidate
 scope: [pkg]
+superseded-by: [CTR.PKG.NPM-CANDIDATE-COMPOSITION, INV.PKG.NPM-CANDIDATE-DEV-MANIFEST-REFUSED, INV.PKG.NPM-CANDIDATE-VERSION-REFUSED, INV.PKG.NPM-CANDIDATE-BOOTSTRAP-REFUSED]
 ---
 
 # npm-кандидат собирается из тонкого корня

@@ -1,6 +1,6 @@
 ---
 id: CTR.PKG.CORE-PROVENANCE-SELECTABLE
-status: active
+status: superseded
 governs: product
 version: 1
 decision: DEC.2026-08-24.CORE-PROVENANCE-NAMED-BY-BUILD
@@ -8,6 +8,7 @@ producer: scripts/ci/package-unica-plugin.py
 consumers: [review, docs]
 check: tests/ci/test_package_unica_plugin.py::test_core_release_repository_override_names_the_fork_as_owner
 scope: [ci, pkg]
+superseded-by: [CTR.PKG.CORE-PROVENANCE-BY-BUILD-INPUT, CTR.PKG.CORE-PROVENANCE-DEFAULT-ADDRESSES, CTR.PKG.CORE-PROVENANCE-REFUSED-BY-MISMATCH]
 ---
 
 # Происхождение ядра выбирается сборкой с одним умолчанием

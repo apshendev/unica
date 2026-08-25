@@ -1,10 +1,11 @@
 ---
 id: INV.PKG.VERSION-LOCKSTEP
-status: active
+status: superseded
 governs: product
 decision: DEC.2026-08-24.OPENCODE-ADAPTER-DELIVERY
 check: tests/ci/test_version_contract.py::test_every_contract_location_declares_the_same_version
 scope: [pkg, product]
+superseded-by: [INV.PKG.VERSION-DECLARED-LOCKSTEP, INV.PKG.VERSION-BUMP-COMPLETE, INV.PKG.VERSION-BUMP-ATOMIC]
 ---
 
 # Версия поставки едина во всех контрактных местах

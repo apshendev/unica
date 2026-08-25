@@ -1,10 +1,11 @@
 ---
 id: INV.HOST.OPENCODE-CLIENT-FLOOR
-status: active
+status: superseded
 governs: product
 decision: DEC.2026-08-25.OPENCODE-CONSUMER-SMOKE
 check: tests/ci/test_package_unica_opencode.py::test_the_candidate_documents_a_version_floor_not_a_ceiling
 scope: [host, docs]
+superseded-by: [INV.HOST.OPENCODE-CLIENT-FLOOR-DOCUMENTED]
 ---
 
 # Пол клиента OpenCode задокументирован, а не потолок

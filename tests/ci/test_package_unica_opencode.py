@@ -131,59 +131,66 @@ class OpenCodePackageCandidateTests(unittest.TestCase):
         self.assertIn("--pack-destination", cmd)
         self.assertEqual(cwd, staging)
 
-        package_json = json.loads(
-            (staging / "package.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(package_json["name"], NPM_PACKAGE_NAME)
-        self.assertEqual(package_json["version"], version)
+        # Полный inventory обоих деревьев: сравнение не выборочное, а
+        # побайтовое по каждому файлу.
+        def inventory(root: Path) -> dict[str, bytes]:
+            return {
+                path.relative_to(root).as_posix(): path.read_bytes()
+                for path in sorted(root.rglob("*"))
+                if path.is_file()
+            }
 
-        # The adapter entry and its user documentation ship with the package;
-        # the npm-facing README is the OpenCode installation guide.
-        self.assertTrue((staging / "opencode" / "index.js").is_file())
+        thin_files = inventory(thin_root)
+        staging_files = inventory(staging)
+
+        # Полный inventory различает три намеренных класса отличий: перенос,
+        # преобразование и удаление; всё прочее невозможно.
+        carried = set(thin_files) & set(staging_files)
+        transformed = {
+            name for name in carried if thin_files[name] != staging_files[name]
+        }
+        removed = set(thin_files) - set(staging_files)
+        added = set(staging_files) - set(thin_files)
+
+        # Каждый переносимый файл тонкого корня доезжает теми же байтами.
+        self.assertEqual(transformed, {"README.md"})
+        for name in sorted(carried - transformed):
+            with self.subTest(carried=name):
+                self.assertEqual(staging_files[name], thin_files[name])
+
+        # Единственное преобразование существующего файла — корневой README:
+        # он есть в обоих деревьях, а версия кандидата байт-в-байт равна
+        # руководству установки OpenCode, но не продукт-README.
+        self.assertIn("README.md", thin_files)
         self.assertEqual(
-            (staging / "README.md").read_bytes(),
+            staging_files["README.md"],
             (PLUGIN_SOURCE / "opencode" / "README.md").read_bytes(),
         )
+        self.assertNotEqual(staging_files["README.md"], thin_files["README.md"])
 
-        # Release-pinned runtime manifest and the shared bootstrap matrix come
-        # from the thin root byte for byte.
-        manifest = json.loads(
-            (staging / "runtime-manifest.json").read_text(encoding="utf-8")
-        )
-        self.assertFalse(manifest["development"])
-        self.assertEqual(manifest["pluginVersion"], version)
-        self.assertEqual(manifest["release"]["tag"], f"v{version}")
-        for target, executable in (
-            ("win-x64", "unica-bootstrap.exe"),
-            ("linux-x64", "unica-bootstrap"),
-            ("darwin-arm64", "unica-bootstrap"),
-        ):
-            self.assertTrue(
-                (staging / "bootstrap" / "bin" / target / executable).is_file(), target
-            )
+        # Единственные удаления — VCS-ignore файлы: они не должны править
+        # правила упаковки самого npm.
         self.assertEqual(
-            (staging / "runtime-manifest.json").read_bytes(),
-            (thin_root / "runtime-manifest.json").read_bytes(),
+            removed,
+            {
+                name
+                for name in thin_files
+                if Path(name).name in {".gitignore", ".npmignore"}
+            },
         )
 
-        # The existing host manifests travel along for installed-package
-        # verification, and the shared consumer content stays in place.
-        for required in (
-            ".mcp.json",
-            ".codex-plugin/plugin.json",
-            ".claude-plugin/plugin.json",
-            "ATTRIBUTIONS.md",
-            "LICENSE",
-            "third-party/tools.lock.json",
-        ):
-            self.assertTrue((staging / required).is_file(), required)
-        self.assertTrue(any((staging / "skills").iterdir()))
-        self.assertTrue((staging / "skills" / "code-search" / "SKILL.md").is_file())
-        self.assertTrue(any((staging / "references").iterdir()))
+        # Настоящие добавления — ровно два класса: npm-метаданные и адаптер
+        # из отслеживаемых файлов; всё прочее в кандидате невозможно.
+        thin_module = load_thin_packager()
+        tracked = thin_module.git_tracked_plugin_files(REPO_ROOT, PLUGIN_SOURCE)
+        expected_additions = {"package.json"} | {
+            rel for rel in tracked if Path(rel).parts[0] == "opencode"
+        }
+        self.assertEqual(added, expected_additions)
 
-        # Test and build content stays out of the candidate.
-        for forbidden in ("node_modules", "package-lock.json", ".build", "dist"):
-            self.assertFalse((staging / forbidden).exists(), forbidden)
+        package_json = json.loads(staging_files["package.json"].decode("utf-8"))
+        self.assertEqual(package_json["name"], NPM_PACKAGE_NAME)
+        self.assertEqual(package_json["version"], version)
 
     def test_the_thin_root_itself_stays_free_of_npm_metadata(self) -> None:
         thin_root, _version = self.build_thin_root()

@@ -275,7 +275,32 @@ class VersionBumpContractTests(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
-    def make_repo(self, root: Path, *, broken: str | None = None) -> None:
+    CONTRACT_LOCATIONS = (
+        "Cargo.toml",
+        ".codex-plugin/plugin.json",
+        ".claude-plugin/plugin.json",
+        "third-party/tools.lock.json",
+        "package.json",
+    )
+
+    def contract_path(self, root: Path, relative: str) -> Path:
+        if relative == "Cargo.toml":
+            return root / "Cargo.toml"
+        return root / "plugins" / "unica" / relative
+
+    def contract_bytes(self, root: Path) -> dict[str, bytes]:
+        return {
+            relative: self.contract_path(root, relative).read_bytes()
+            for relative in self.CONTRACT_LOCATIONS
+        }
+
+    def break_contract_location(self, root: Path, relative: str) -> None:
+        # Cargo.toml ломается отсутствием строки версии под рендер, остальное —
+        # невалидным JSON.
+        payload = "[workspace.package]\n" if relative == "Cargo.toml" else "{ not json"
+        self.contract_path(root, relative).write_text(payload, encoding="utf-8")
+
+    def make_repo(self, root: Path) -> None:
         (root / "Cargo.toml").write_text(
             '[workspace.package]\nversion = "0.12.0"\n', encoding="utf-8"
         )
@@ -297,8 +322,6 @@ class VersionBumpContractTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
-        if broken is not None:
-            (plugin / broken).write_text("{ not json", encoding="utf-8")
 
     def test_bump_updates_the_npm_package_version_too(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -313,20 +336,56 @@ class VersionBumpContractTests(unittest.TestCase):
             self.assertEqual(package["version"], "0.13.0")
             self.assertIn("plugins/unica/package.json", changed)
 
-    def test_a_render_failure_leaves_every_contract_file_untouched(self) -> None:
+    def test_bump_updates_every_contract_location(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self.make_repo(root, broken="package.json")
+            self.make_repo(root)
 
-            with self.assertRaises((json.JSONDecodeError, SystemExit)):
-                self.bumper().bump(root, "0.13.0")
+            changed = self.bumper().bump(root, "0.13.0")
 
-            manifest = json.loads(
-                (root / "plugins/unica/.codex-plugin/plugin.json").read_text(
+            self.assertEqual(
+                sorted(changed),
+                [
+                    "Cargo.toml",
+                    "plugins/unica/.claude-plugin/plugin.json",
+                    "plugins/unica/.codex-plugin/plugin.json",
+                    "plugins/unica/package.json",
+                    "plugins/unica/third-party/tools.lock.json",
+                ],
+            )
+            workspace = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+            self.assertEqual(workspace["workspace"]["package"]["version"], "0.13.0")
+            for host in (".codex-plugin", ".claude-plugin"):
+                manifest = json.loads(
+                    self.contract_path(root, f"{host}/plugin.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(manifest["version"], "0.13.0", host)
+            lock = json.loads(
+                self.contract_path(root, "third-party/tools.lock.json").read_text(
                     encoding="utf-8"
                 )
             )
-            self.assertEqual(manifest["version"], "0.12.0")
+            self.assertEqual([tool["version"] for tool in lock["tools"]], ["0.13.0"])
+            package = json.loads(
+                self.contract_path(root, "package.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(package["version"], "0.13.0")
+
+    def test_a_render_failure_leaves_every_contract_file_untouched(self) -> None:
+        for broken in self.CONTRACT_LOCATIONS:
+            with self.subTest(broken=broken):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    self.make_repo(root)
+                    self.break_contract_location(root, broken)
+                    before = self.contract_bytes(root)
+
+                    with self.assertRaises((json.JSONDecodeError, SystemExit)):
+                        self.bumper().bump(root, "0.13.0")
+
+                    self.assertEqual(self.contract_bytes(root), before)
 
 
 if __name__ == "__main__":

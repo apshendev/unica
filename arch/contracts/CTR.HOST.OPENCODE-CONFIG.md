@@ -1,6 +1,6 @@
 ---
 id: CTR.HOST.OPENCODE-CONFIG
-status: active
+status: superseded
 governs: product
 version: 1
 decision: DEC.2026-08-24.OPENCODE-ADAPTER-DELIVERY
@@ -8,6 +8,7 @@ producer: plugins/unica/opencode/index.js
 consumers: [host, review, docs]
 check: tests/ci/test_opencode_adapter.py::test_the_adapter_takes_ownership_of_mcp_unica_and_preserves_neighbours
 scope: [host, pkg]
+superseded-by: [CTR.HOST.OPENCODE-MCP-OWNERSHIP, CTR.HOST.OPENCODE-SKILLS-PATHS, CTR.HOST.OPENCODE-STATE-PROCESS-OVERRIDES, CTR.HOST.OPENCODE-STATE-XDG-DERIVATION, CTR.HOST.OPENCODE-STATE-WINDOWS-DERIVATION]
 ---
 
 # Конфигурация OpenCode получает упакованные скиллы и владельца mcp.unica
