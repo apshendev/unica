@@ -234,6 +234,8 @@ cargo test -p unica-bootstrap --test manifest_contract   # default-ветка т
 
 > [2026-08-25 12:02] Выполнено: артефакт run 32766639619 скачан; sanity пройден (`pluginVersion == 0.12.0`, `release.tag == v0.12.0`, совпадение с `plugins/unica/package.json`); собран `dist/local-opencode/apshendev-unica-opencode-0.12.0.tgz` (5 043 638 байт, 161 entry, bootstrap-матрица 3 платформ). `.build/` и `dist/` не закоммичены.
 
+> [2026-08-25 12:55] Перевыполнено с корректным входом после снятия блокера шага 5: скачан thin-артефакт точного tag-run 31950933025 (`gh run download 31950933025 --repo IngvarConsulting/unica --name unica-thin-marketplace --dir .build/opencode-local/thin`), sanity пройден (`pluginVersion == 0.12.0`, `release.tag == v0.12.0`, `development == false`), sha256 всех трёх runtime-архивов манифеста совпали с metadata релиза v0.12.0; пересобран `dist/local-opencode/apshendev-unica-opencode-0.12.0.tgz` (4 763 426 байт, 164 entry). Старый `dist/local-opencode` и `.build/opencode-local` перед пересборкой удалены. `.build/` и `dist/` не закоммичены.
+
 ---
 
 ## Шаг 5. Проверка настоящим OpenCode 1.18.22 (ручной, без изменений репозитория)
