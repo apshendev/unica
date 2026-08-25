@@ -78,28 +78,33 @@ def verify_mcp(output_path: Path) -> None:
     except OSError as error:
         raise SystemExit(f"consumer mcp listing is unreadable: {error}") from error
     # `opencode mcp list` печатает clack-рамку: `●` открывает запись сервера,
-    # `│` продолжает её деталями, `┌`/`└` — границы списка. Владение
-    # bootstrap проверяется внутри записи unica, а не по всему выводу.
+    # `│` продолжает её деталями, пустая `│` и границы `┌`/`└` закрывают
+    # запись. Владение bootstrap проверяется внутри записи unica, а не по
+    # всему выводу.
     records: list[tuple[str, str, list[str]]] = []
+    current: tuple[str, str, list[str]] | None = None
     for raw_line in text.splitlines():
         line = _strip_ansi(raw_line).strip()
         if not line:
             continue
         marker = line[0]
         if marker in "┌└":
+            current = None
             continue
         if marker == "●":
             match = _SERVER_LINE.match(line)
             if match is None:
                 raise SystemExit(f"unparsable mcp server line: {line}")
-            records.append((match.group("name"), match.group("status"), []))
+            current = (match.group("name"), match.group("status"), [])
+            records.append(current)
         elif marker == "│":
             detail = line[1:].strip()
             if not detail:
+                current = None
                 continue
-            if not records:
-                raise SystemExit(f"mcp detail line before any server: {line}")
-            records[-1][2].append(detail)
+            if current is None:
+                raise SystemExit(f"mcp detail line outside any server block: {line}")
+            current[2].append(detail)
         else:
             raise SystemExit(f"unexpected line in mcp listing: {line}")
     if not records:

@@ -87,6 +87,7 @@ bootstrap» или «does not mention the unica server» — это воспро
 `python -m py_compile scripts/ci/smoke-opencode-consumer.py`.
 
 > [2026-08-25 11:33] Выполнено: `verify_mcp` переписан (ANSI CSI/OSC-очистка, классификация `●`/`│`/`┌`/`└`, точное имя, fail closed); 12/12 тестов зелёные, `py_compile` без ошибок.
+> [2026-08-25 13:10] Правка по code-review: пустая `│` и границы `┌`/`└` закрывают текущую запись; деталь вне блока — отказ. Красный `test_a_detail_after_a_separator_does_not_count_for_the_previous_server` → зелёный; 13/13; проверено на живых байтах из шага 5.
 
 ---
 

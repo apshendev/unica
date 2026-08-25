@@ -224,6 +224,22 @@ class VerifyMcpTests(unittest.TestCase):
 
         self.assertIn("bootstrap", str(ctx.exception))
 
+    def test_a_detail_after_a_separator_does_not_count_for_the_previous_server(
+        self,
+    ) -> None:
+        # Пустая `│` закрывает блок: деталь после разделителя не принадлежит
+        # предыдущему серверу, и его запись остаётся без bootstrap.
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(
+                COLORED_HEADER
+                + colored_server("unica", "connected", "✓")
+                + colored_separator()
+                + colored_detail(WINDOWS_BOOTSTRAP_COMMAND)
+                + colored_footer(1)
+            )
+
+        self.assertIn("bootstrap", str(ctx.exception))
+
     def test_a_listing_without_unica_fails(self) -> None:
         with self.assertRaises(SystemExit) as ctx:
             self.run_verify(
