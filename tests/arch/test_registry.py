@@ -36,7 +36,12 @@ ARCH_ROOT = REPO_ROOT / "arch"
 ARCHIVE = REPO_ROOT / "docs" / "arch-v1"
 
 DECISION_BODY_LIMIT = 40
-SUPERPOWERS_MARKERS = ("For agentic workers", "**Goal:**", "**Tech Stack:**", "REQUIRED SUB-SKILL")
+SUPERPOWERS_MARKERS = (
+    "For agentic workers",
+    "**Goal:**",
+    "**Tech Stack:**",
+    "REQUIRED SUB-SKILL",
+)
 
 # A record must read without the tracker open. `#123` is the shorthand; the
 # full URL is the same reference written longer. The lookbehind keeps HTML
@@ -85,11 +90,7 @@ def _python_declarations(tree: ast.AST, require_executable: bool) -> set[str]:
 
 def _rust_test_attribute(source: bytes, attribute_item) -> bool:
     attribute = next(
-        (
-            child
-            for child in attribute_item.named_children
-            if child.type == "attribute"
-        ),
+        (child for child in attribute_item.named_children if child.type == "attribute"),
         None,
     )
     if attribute is None or not attribute.named_children:
@@ -100,8 +101,7 @@ def _rust_test_attribute(source: bytes, attribute_item) -> bool:
     if name.type == "scoped_identifier":
         final = name.child_by_field_name("name")
         return (
-            final is not None
-            and source[final.start_byte : final.end_byte] == b"test"
+            final is not None and source[final.start_byte : final.end_byte] == b"test"
         )
     return False
 
@@ -185,7 +185,9 @@ def evidence_reference_error(
                     )
                 ):
                     declarations.add(
-                        source[identifier.start_byte : identifier.end_byte].decode("utf-8")
+                        source[identifier.start_byte : identifier.end_byte].decode(
+                            "utf-8"
+                        )
                     )
             stack.extend(node.named_children)
     else:
@@ -274,10 +276,16 @@ class RecordShapeTests(unittest.TestCase):
 
     def test_null_decision_does_not_ground_a_rule(self) -> None:
         errors = REGISTRY.validation_errors(
-            [self.active_decision(), contract_record(self.contract_props(decision=None))]
+            [
+                self.active_decision(),
+                contract_record(self.contract_props(decision=None)),
+            ]
         )
 
-        self.assertTrue(any("decision does not resolve to a decision" in error for error in errors), errors)
+        self.assertTrue(
+            any("decision does not resolve to a decision" in error for error in errors),
+            errors,
+        )
 
     def test_rule_cannot_use_an_invariant_as_its_decision(self) -> None:
         invariant = invariant_record(
@@ -298,7 +306,135 @@ class RecordShapeTests(unittest.TestCase):
             ]
         )
 
-        self.assertTrue(any("decision does not resolve to a decision" in error for error in errors), errors)
+        self.assertTrue(
+            any("decision does not resolve to a decision" in error for error in errors),
+            errors,
+        )
+
+    def invariant_props(self, **overrides: object) -> dict:
+        props = {
+            "id": "INV.WIRE.EXAMPLE",
+            "status": "active",
+            "governs": "product",
+            "decision": "DEC.2026-08-21.EXAMPLE",
+            "check": "tests/arch/test_registry.py::RecordShapeTests",
+            "scope": ["wire"],
+        }
+        props.update(overrides)
+        return props
+
+    def rules_owner(self, *rule_ids: str) -> REGISTRY.Record:
+        return self.active_decision(establishes=list(rule_ids))
+
+    def test_a_superseded_rule_without_a_successor_is_caught(self) -> None:
+        errors = REGISTRY.validation_errors(
+            [
+                self.rules_owner("INV.WIRE.EXAMPLE"),
+                invariant_record(self.invariant_props(status="superseded")),
+            ]
+        )
+
+        self.assertTrue(any("superseded-by" in error for error in errors), errors)
+
+    def test_an_active_rule_cannot_carry_a_successor(self) -> None:
+        errors = REGISTRY.validation_errors(
+            [
+                self.rules_owner("INV.WIRE.EXAMPLE"),
+                invariant_record(
+                    self.invariant_props(**{"superseded-by": ["INV.WIRE.OTHER"]})
+                ),
+            ]
+        )
+
+        self.assertTrue(any("superseded-by" in error for error in errors), errors)
+
+    def test_rule_supersession_targets_must_exist(self) -> None:
+        errors = REGISTRY.validation_errors(
+            [
+                self.rules_owner("INV.WIRE.EXAMPLE"),
+                invariant_record(
+                    self.invariant_props(
+                        **{
+                            "status": "superseded",
+                            "superseded-by": ["INV.WIRE.MISSING"],
+                        }
+                    )
+                ),
+            ]
+        )
+
+        self.assertTrue(any("INV.WIRE.MISSING" in error for error in errors), errors)
+
+    def test_rule_supersession_targets_must_be_rules(self) -> None:
+        errors = REGISTRY.validation_errors(
+            [
+                self.rules_owner("INV.WIRE.EXAMPLE"),
+                invariant_record(
+                    self.invariant_props(
+                        **{
+                            "status": "superseded",
+                            "superseded-by": ["DEC.2026-08-21.EXAMPLE"],
+                        }
+                    )
+                ),
+            ]
+        )
+
+        self.assertTrue(
+            any("DEC.2026-08-21.EXAMPLE" in error for error in errors), errors
+        )
+
+    def test_rule_supersession_is_mutual(self) -> None:
+        successor = invariant_record(
+            self.invariant_props(
+                id="INV.WIRE.SUCCESSOR",
+                supersedes=["INV.WIRE.EXAMPLE"],
+            )
+        )
+        replaced = invariant_record(
+            self.invariant_props(
+                **{
+                    "status": "superseded",
+                    "superseded-by": ["INV.WIRE.SUCCESSOR"],
+                }
+            )
+        )
+        # A superseded successor is a legal chain link, not an error.
+        chained_successor = invariant_record(
+            self.invariant_props(
+                id="INV.WIRE.SUCCESSOR",
+                status="superseded",
+                supersedes=["INV.WIRE.EXAMPLE"],
+                **{"superseded-by": ["INV.WIRE.NEXT"]},
+            )
+        )
+        owner = self.rules_owner(
+            "INV.WIRE.EXAMPLE", "INV.WIRE.SUCCESSOR", "INV.WIRE.NEXT"
+        )
+
+        mutual = REGISTRY.validation_errors([owner, replaced, successor])
+        self.assertFalse(any("INV.WIRE.EXAMPLE" in error for error in mutual), mutual)
+
+        chained = REGISTRY.validation_errors(
+            [
+                owner,
+                replaced,
+                chained_successor,
+                invariant_record(
+                    self.invariant_props(
+                        id="INV.WIRE.NEXT",
+                        supersedes=["INV.WIRE.SUCCESSOR"],
+                    )
+                ),
+            ]
+        )
+        self.assertFalse(any("INV.WIRE.EXAMPLE" in error for error in chained), chained)
+
+        stranger = invariant_record(self.invariant_props(id="INV.WIRE.SUCCESSOR"))
+        silent = REGISTRY.validation_errors([owner, replaced, stranger])
+        self.assertTrue(
+            any("does not supersede it back" in error for error in silent), silent
+        )
 
     def test_active_rules_reference_active_decisions(self) -> None:
         superseded = self.active_decision(status="superseded")
@@ -307,14 +443,22 @@ class RecordShapeTests(unittest.TestCase):
             [superseded, contract_record(self.contract_props())]
         )
 
-        self.assertTrue(any("active rule cites a non-active decision" in error for error in errors), errors)
+        self.assertTrue(
+            any("active rule cites a non-active decision" in error for error in errors),
+            errors,
+        )
 
     def test_rule_ownership_is_reciprocal(self) -> None:
         rule = contract_record(self.contract_props())
 
-        missing_from_decision = REGISTRY.validation_errors([self.active_decision(), rule])
+        missing_from_decision = REGISTRY.validation_errors(
+            [self.active_decision(), rule]
+        )
         self.assertTrue(
-            any("does not establish its rule" in error for error in missing_from_decision),
+            any(
+                "does not establish its rule" in error
+                for error in missing_from_decision
+            ),
             missing_from_decision,
         )
 
@@ -356,8 +500,13 @@ class RecordShapeTests(unittest.TestCase):
             ]
         )
 
-        self.assertTrue(any("`scope` must be a non-empty list" in error for error in errors), errors)
-        self.assertTrue(any("`consumers` must be a non-empty list" in error for error in errors), errors)
+        self.assertTrue(
+            any("`scope` must be a non-empty list" in error for error in errors), errors
+        )
+        self.assertTrue(
+            any("`consumers` must be a non-empty list" in error for error in errors),
+            errors,
+        )
 
     def test_contract_version_is_a_positive_integer(self) -> None:
         for version in ("0", "text"):
@@ -370,7 +519,10 @@ class RecordShapeTests(unittest.TestCase):
                 )
 
                 self.assertTrue(
-                    any("version must be a positive integer" in error for error in errors),
+                    any(
+                        "version must be a positive integer" in error
+                        for error in errors
+                    ),
                     errors,
                 )
 
@@ -402,7 +554,10 @@ class RecordShapeTests(unittest.TestCase):
 
         self.assertEqual(REGISTRY.validation_errors([planned]), [])
         self.assertTrue(
-            any("missing prop `realized`" in error for error in REGISTRY.validation_errors([active]))
+            any(
+                "missing prop `realized`" in error
+                for error in REGISTRY.validation_errors([active])
+            )
         )
         self.assertTrue(
             any(
@@ -528,7 +683,9 @@ class ReferenceTests(unittest.TestCase):
                 if key == "id":
                     continue
                 for item in value if isinstance(value, list) else [value]:
-                    if isinstance(item, str) and REGISTRY.SYMBOL_ANYWHERE.fullmatch(item):
+                    if isinstance(item, str) and REGISTRY.SYMBOL_ANYWHERE.fullmatch(
+                        item
+                    ):
                         if item not in known:
                             offenders.append(f"{record.relative}: {key} cites {item}")
         self.assertEqual(offenders, [])
@@ -540,11 +697,15 @@ class ReferenceTests(unittest.TestCase):
             if record.kind not in ("invariant", "contract"):
                 continue
             decision = by_id.get(record.props.get("decision"))
-            if decision is None or record.id not in (decision.props.get("establishes") or []):
+            if decision is None or record.id not in (
+                decision.props.get("establishes") or []
+            ):
                 offenders.append(
                     f"{record.relative}: {record.props.get('decision')} does not establish {record.id}"
                 )
-        for decision in (record for record in REGISTRY.records() if record.kind == "decision"):
+        for decision in (
+            record for record in REGISTRY.records() if record.kind == "decision"
+        ):
             for rule_id in decision.props.get("establishes") or []:
                 rule = by_id.get(rule_id)
                 if rule is not None and rule.props.get("decision") != decision.id:
@@ -623,10 +784,20 @@ class ReferenceTests(unittest.TestCase):
         for record in REGISTRY.records():
             for older in record.props.get("supersedes") or []:
                 target = by_id.get(older)
-                if target and target.props.get("superseded-by") != record.id:
+                back = target.props.get("superseded-by") if target else None
+                points_back = (
+                    record.id in back if isinstance(back, list) else back == record.id
+                )
+                if target and not points_back:
                     offenders.append(f"{older} does not point back at {record.id}")
                 if target and target.props.get("status") != "superseded":
                     offenders.append(f"{older} is superseded but not marked so")
+            if record.kind not in ("invariant", "contract"):
+                continue
+            for successor in record.props.get("superseded-by") or []:
+                target = by_id.get(successor)
+                if target and record.id not in (target.props.get("supersedes") or []):
+                    offenders.append(f"{successor} does not supersede {record.id} back")
         self.assertEqual(offenders, [])
 
     def test_every_rule_names_a_check_that_exists(self) -> None:
@@ -655,7 +826,9 @@ class ReferenceTests(unittest.TestCase):
                 offenders.append(error)
         self.assertEqual(offenders, [])
 
-    def test_evidence_reference_requires_an_exact_python_or_rust_declaration(self) -> None:
+    def test_evidence_reference_requires_an_exact_python_or_rust_declaration(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tests = root / "tests"
@@ -736,11 +909,15 @@ class ReferenceTests(unittest.TestCase):
                         )
                     )
 
-    def test_executable_python_evidence_must_be_in_a_discoverable_test_module(self) -> None:
+    def test_executable_python_evidence_must_be_in_a_discoverable_test_module(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             arbitrary = root / "checks.py"
-            arbitrary.write_text("def test_looks_executable(): pass\n", encoding="utf-8")
+            arbitrary.write_text(
+                "def test_looks_executable(): pass\n", encoding="utf-8"
+            )
 
             error = evidence_reference_error(
                 root,
@@ -834,7 +1011,9 @@ class ReferenceTests(unittest.TestCase):
                 if prop == "id":
                     continue
                 if re.search(rf"`{re.escape(prop)}\b[^`]*`", record.body):
-                    offenders.append(f"{record.relative}: body explains its own `{prop}`")
+                    offenders.append(
+                        f"{record.relative}: body explains its own `{prop}`"
+                    )
         self.assertEqual(offenders, [])
 
     def test_every_contract_names_a_producer_that_exists(self) -> None:
@@ -878,7 +1057,9 @@ class AtomicityTests(unittest.TestCase):
                 continue
             lines = [line for line in record.body.splitlines() if line.strip()]
             if len(lines) > DECISION_BODY_LIMIT:
-                offenders.append(f"{record.relative}: {len(lines)} lines > {DECISION_BODY_LIMIT}")
+                offenders.append(
+                    f"{record.relative}: {len(lines)} lines > {DECISION_BODY_LIMIT}"
+                )
         self.assertEqual(offenders, [])
 
 
@@ -903,7 +1084,9 @@ class LayerBoundaryTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             for marker in SUPERPOWERS_MARKERS:
                 if marker in text:
-                    offenders.append(f"{path.relative_to(REPO_ROOT).as_posix()}: {marker!r}")
+                    offenders.append(
+                        f"{path.relative_to(REPO_ROOT).as_posix()}: {marker!r}"
+                    )
         self.assertEqual(offenders, [])
 
     def test_no_record_points_at_the_tracker(self) -> None:
@@ -933,23 +1116,40 @@ class LayerBoundaryTests(unittest.TestCase):
         expected = {}
         for line in manifest.read_text(encoding="utf-8").splitlines():
             digest, separator, relative = line.partition("  ")
-            self.assertEqual(separator, "  ", f"malformed archive manifest line: {line!r}")
+            self.assertEqual(
+                separator, "  ", f"malformed archive manifest line: {line!r}"
+            )
             expected[relative] = digest
 
         actual = {
-            path.relative_to(ARCHIVE).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            path.relative_to(ARCHIVE).as_posix(): hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
             for path in ARCHIVE.rglob("*")
             if path.is_file() and path != manifest
         }
-        self.assertEqual(set(actual), set(expected), "archive file set differs from its manifest")
-        self.assertEqual(actual, expected, "archive bytes differ from their frozen digests")
+        self.assertEqual(
+            set(actual), set(expected), "archive file set differs from its manifest"
+        )
+        self.assertEqual(
+            actual, expected, "archive bytes differ from their frozen digests"
+        )
 
     def test_v2_process_policy_changes_are_explicit_and_compatible(self) -> None:
         agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("Проектная записка фиксирует путь к выбору и нормативной не становится", agents)
-        self.assertTrue(all(record.path.is_relative_to(ARCH_ROOT) for record in REGISTRY.records()))
-        self.assertFalse((REPO_ROOT / "tests/ci/test_architecture_registry.py").exists())
-        self.assertFalse(any("RUSSIAN-NORMATIVE" in record.id for record in REGISTRY.records()))
+        self.assertIn(
+            "Проектная записка фиксирует путь к выбору и нормативной не становится",
+            agents,
+        )
+        self.assertTrue(
+            all(record.path.is_relative_to(ARCH_ROOT) for record in REGISTRY.records())
+        )
+        self.assertFalse(
+            (REPO_ROOT / "tests/ci/test_architecture_registry.py").exists()
+        )
+        self.assertFalse(
+            any("RUSSIAN-NORMATIVE" in record.id for record in REGISTRY.records())
+        )
 
     def test_archive_manifest_cannot_change_after_acceptance(self) -> None:
         """Once the freeze reaches main, a matching rewritten manifest is still drift."""

@@ -28,7 +28,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ARCH_ROOT = REPO_ROOT / "arch"
 INDEX_PATH = ARCH_ROOT / "index.md"
 
-KIND_BY_DIR = {"decisions": "decision", "invariants": "invariant", "contracts": "contract"}
+KIND_BY_DIR = {
+    "decisions": "decision",
+    "invariants": "invariant",
+    "contracts": "contract",
+}
 SYMBOL_PREFIX = {"decision": "DEC", "invariant": "INV", "contract": "CTR"}
 
 REQUIRED_PROPS = {
@@ -103,7 +107,9 @@ def parse_front_matter(text: str) -> tuple[dict, str]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if ":" not in line:
-            raise ValueError(f"front matter line {number} is not `key: value`: {line!r}")
+            raise ValueError(
+                f"front matter line {number} is not `key: value`: {line!r}"
+            )
         key, _, raw = line.partition(":")
         key, raw = key.strip(), raw.strip()
         if raw.startswith("[") and raw.endswith("]"):
@@ -126,7 +132,9 @@ def records(root: Path = ARCH_ROOT) -> list[Record]:
         for path in sorted(base.glob("*.md")):
             props, body = parse_front_matter(path.read_text(encoding="utf-8"))
             identifier = props.get("id") or ""
-            found.append(Record(id=identifier, kind=kind, path=path, props=props, body=body))
+            found.append(
+                Record(id=identifier, kind=kind, path=path, props=props, body=body)
+            )
     return sorted(found, key=lambda record: record.id)
 
 
@@ -159,19 +167,59 @@ def validation_errors(found: list[Record]) -> list[str]:
             ):
                 errors.append(f"{record.relative}: missing prop `{key}`")
         if record.kind in {"invariant", "contract"}:
-            list_keys = ("scope",) + (("consumers",) if record.kind == "contract" else ())
+            list_keys = ("scope",) + (
+                ("consumers",) if record.kind == "contract" else ()
+            )
             for key in list_keys:
                 if not isinstance(record.props.get(key), list) or not record.props[key]:
-                    errors.append(f"{record.relative}: `{key}` must be a non-empty list")
+                    errors.append(
+                        f"{record.relative}: `{key}` must be a non-empty list"
+                    )
             owner = by_id.get(record.props.get("decision"))
             if owner is None or owner.kind != "decision":
-                errors.append(f"{record.relative}: decision does not resolve to a decision")
-            elif record.props.get("status") == "active" and owner.props.get("status") != "active":
-                errors.append(f"{record.relative}: active rule cites a non-active decision")
+                errors.append(
+                    f"{record.relative}: decision does not resolve to a decision"
+                )
+            elif (
+                record.props.get("status") == "active"
+                and owner.props.get("status") != "active"
+            ):
+                errors.append(
+                    f"{record.relative}: active rule cites a non-active decision"
+                )
             elif record.id not in (owner.props.get("establishes") or []):
                 errors.append(
                     f"{owner.relative}: does not establish its rule {record.id}"
                 )
+            successors = record.props.get("superseded-by")
+            if record.props.get("status") == "superseded":
+                if not isinstance(successors, list) or not successors:
+                    errors.append(
+                        f"{record.relative}: a superseded rule must list its "
+                        "successors in `superseded-by`"
+                    )
+            elif successors:
+                errors.append(
+                    f"{record.relative}: `superseded-by` is only allowed on a "
+                    "superseded rule"
+                )
+            for successor_id in successors if isinstance(successors, list) else []:
+                successor = by_id.get(successor_id)
+                if successor is None:
+                    errors.append(
+                        f"{record.relative}: superseded-by cites missing record "
+                        f"{successor_id}"
+                    )
+                elif successor.kind not in {"invariant", "contract"}:
+                    errors.append(
+                        f"{record.relative}: superseded-by must cite rules, not "
+                        f"{successor.kind} {successor_id}"
+                    )
+                elif record.id not in (successor.props.get("supersedes") or []):
+                    errors.append(
+                        f"{record.relative}: successor {successor_id} does not "
+                        "supersede it back"
+                    )
         if record.kind == "contract":
             version = str(record.props.get("version", ""))
             if not version.isdecimal() or int(version) < 1:

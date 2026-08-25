@@ -9,16 +9,23 @@
 отметка о реализации сюда не относятся: они говорят не о решении, а о мире
 вокруг него, появляются позже самого решения и записываются атомарно.
 
-Инвариант и контракт описывают действующее правило, а правило со временем
-уточняется. Их править можно — но только вместе с решением, которое этой же
-правкой заводится и объясняет, почему правило меняется. Инвариант, изменившийся
-без нового основания, и есть тихая смена обещания.
+Инвариант и контракт описывают действующее правило, а правило меняют только
+заменой: старому ставят штамп `status: superseded` со списком преемников в
+`superseded-by`, сами преемники приходят новыми записями под новыми решениями.
+Тело и прочие поля штамп не трогает; перезаземление действующего правила
+запрещено — смена основания без смены обещания и есть тихая подмена.
 
 Процессная запись под это не подпадает: её и заводят, чтобы перестроить в тот
 день, когда разрабатывать стало неудобно.
 
 Сторона берётся из базы, а не из рабочего дерева: иначе правку продуктового
 правила достаточно было бы прикрыть переводом его в процессные.
+
+Состоянием сравнения служит последнее принятое состояние записи: если коммиты
+диапазона base..HEAD уже дошли до origin/main, их правки — принятая история, и
+страж сверяет живой changeset с её итогом. Локальные коммиты впереди
+origin/main этим доверием не пользуются: их правки обязан поймать страж
+против origin/main.
 
 Usage:
     immutability.py --base origin/main
@@ -94,12 +101,62 @@ def _git(repo: Path, *args: str) -> str:
     return done.stdout
 
 
+ACCEPTED_TIP = "origin/main"
+
+
+def _accepted_predecessor(repo: Path, path: str, base_ref: str, base_text: str) -> str:
+    """Последнее принятое состояние записи как состояние сравнения.
+
+    Из коммитов диапазона base..HEAD берётся новейший, дошедший до
+    `origin/main`; текст записи в нём и есть принятая история. Коммиты впереди
+    `origin/main` не принимаются: их правки — живой changeset. Когда
+    `origin/main` нет, страж строг и сверяет с самой базой.
+    """
+    probe = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", ACCEPTED_TIP],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode != 0:
+        return base_text
+    log = subprocess.run(
+        ["git", "log", "--format=%H", f"{base_ref}..HEAD", "--", path],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    for commit in log.stdout.split():
+        accepted = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", commit, ACCEPTED_TIP],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        )
+        if accepted.returncode != 0:
+            continue
+        shown = subprocess.run(
+            ["git", "show", f"{commit}:{path}"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        )
+        if shown.returncode == 0:
+            return shown.stdout
+    return base_text
+
+
 def _records_at(repo: Path, ref: str) -> dict[str, str]:
     """Пути и содержимое записей реестра в указанной ревизии."""
     listing = _git(repo, "ls-tree", "-r", "--name-only", ref, "--", ARCH_PREFIX).split()
     found = {}
     for path in listing:
-        if not path.endswith(".md") or path.endswith("index.md") or path.endswith("README.md"):
+        if (
+            not path.endswith(".md")
+            or path.endswith("index.md")
+            or path.endswith("README.md")
+        ):
             continue
         found[path] = _git(repo, "show", f"{ref}:{path}")
     return found
@@ -113,7 +170,7 @@ def _split(text: str) -> tuple[dict, str]:
 
 
 def _is_recordable_only(before: str, after: str) -> bool:
-    """Правка сводится к простановке отметки и ничему больше."""
+    """Правка решения сводится к простановке отметки и ничему больше."""
     old_props, old_body = _split(before)
     new_props, new_body = _split(after)
     if old_body != new_body:
@@ -143,12 +200,36 @@ def _is_recordable_only(before: str, after: str) -> bool:
     return False
 
 
-def _records_introduced(repo: Path, base: dict[str, str]) -> dict[str, IntroducedRecord]:
+def _is_rule_supersession_stamp(before: str, after: str) -> bool:
+    """Штамп замены правила: смена статуса плюс новый список преемников.
+
+    Тело и все прежние поля побайтово неизменны; набор полей после правки
+    отличается от исходного ровно добавленным `superseded-by`-списком.
+    """
+    old_props, old_body = _split(before)
+    new_props, new_body = _split(after)
+    if old_body != new_body:
+        return False
+    if set(new_props) != set(old_props) | {"superseded-by"}:
+        return False
+    if any(key != "status" and old_props[key] != new_props[key] for key in old_props):
+        return False
+    successor_list = new_props.get("superseded-by")
+    return (
+        old_props.get("status") == "active"
+        and new_props.get("status") == "superseded"
+        and not old_props.get("superseded-by")
+        and isinstance(successor_list, list)
+        and bool(successor_list)
+    )
+
+
+def _records_introduced(
+    repo: Path, base: dict[str, str]
+) -> dict[str, IntroducedRecord]:
     """Новые записи вместе с видом и props, нужными для проверки основания."""
     known = {
-        props["id"]
-        for text in base.values()
-        if (props := _split(text)[0]).get("id")
+        props["id"] for text in base.values() if (props := _split(text)[0]).get("id")
     }
     introduced: dict[str, IntroducedRecord] = {}
     for directory, kind in (
@@ -273,7 +354,9 @@ def _ground_error(repo: Path, ground: IntroducedRecord) -> str | None:
     if ground.props.get("status") != "active":
         return f"решение {ground.path} имеет status {ground.props.get('status')!r}, не active"
     if ground.props.get("governs") != "product":
-        return f"решение {ground.path} governs {ground.props.get('governs')!r}, не product"
+        return (
+            f"решение {ground.path} governs {ground.props.get('governs')!r}, не product"
+        )
     evidence = ground.props.get("realized")
     if not evidence:
         return f"решение {ground.path} не имеет realized evidence"
@@ -287,7 +370,11 @@ def _ground_error(repo: Path, ground: IntroducedRecord) -> str | None:
 def _list_property(value: object) -> tuple[str, ...]:
     if isinstance(value, list):
         return tuple(str(item) for item in value)
-    if not isinstance(value, str) or not value.startswith("[") or not value.endswith("]"):
+    if (
+        not isinstance(value, str)
+        or not value.startswith("[")
+        or not value.endswith("]")
+    ):
         return ()
     return tuple(item.strip() for item in value[1:-1].split(",") if item.strip())
 
@@ -300,9 +387,7 @@ def _surface_change_has_product_ground(
     for identifier, decision in introduced.items():
         if decision.kind != "decision" or _ground_error(repo, decision) is not None:
             continue
-        if "CTR.WIRE.TOOL-SURFACE" not in _list_property(
-            decision.props.get("changes")
-        ):
+        if "CTR.WIRE.TOOL-SURFACE" not in _list_property(decision.props.get("changes")):
             continue
         for established in _list_property(decision.props.get("establishes")):
             rule = introduced.get(established)
@@ -339,24 +424,23 @@ def inspect(repo: Path, base_ref: str) -> Verdict:
         after = current.read_text(encoding="utf-8")
         if after == before:
             continue
+        comparison = _accepted_predecessor(repo, path, base_ref, before)
+        if after == comparison:
+            continue
 
         if path.startswith("arch/decisions/"):
-            if not _is_recordable_only(before, after):
-                offenders.append(f"{path}: продуктовое решение отредактировано, а не заменено")
+            if not _is_recordable_only(comparison, after):
+                offenders.append(
+                    f"{path}: продуктовое решение отредактировано, а не заменено"
+                )
             continue
 
-        # Инвариант и контракт: правка законна, если этой же правкой заведено
-        # решение, на которое запись теперь и ссылается. Существующее основание
-        # не годится — оно писалось раньше и этой перемены не предвидело.
-        ground = _split(after)[0].get("decision")
-        introduced_ground = introduced.get(ground)
-        if introduced_ground is None:
-            offenders.append(
-                f"{path}: продуктовое правило изменено без нового решения о причине"
-            )
-            continue
-        if error := _ground_error(repo, introduced_ground):
-            offenders.append(f"{path}: продуктовое правило изменено, но {error}")
+        # Инвариант и контракт меняются только штампом замены: смена статуса на
+        # superseded плюс добавленный список преемников, без правки тела и
+        # остальных полей. Механизм нового основания живёт только для
+        # surface-изменений `arch/tool-surface.md`.
+        if not _is_rule_supersession_stamp(comparison, after):
+            offenders.append(f"{path}: продуктовое правило изменено без штампа замены")
 
     surface_path = "arch/tool-surface.md"
     before_surface = base.get(surface_path)

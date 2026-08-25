@@ -311,6 +311,8 @@ python -m unittest tests.ci.test_package_unica_opencode -v
   `INV.REGISTRY.PRODUCT-RULE-NEEDS-GROUND`): обычная правка без штампа
   по-прежнему отвергается.
 
+> Выполнено: 2026-08-25 16:21 (3.1 — RED подтверждён: 'positive stamp is accepted' и 'chained stamps stay valid' падают как «продуктовое правило изменено без нового решения о причине»; test_regrounding_an_existing_rule_is_refused падает 0 != 1; ассерт сообщения обновлён на «без штампа замены»; 10 тестов переименованы в test_a_surface_ground_with_*_is_refused с прямым вызовом _ground_error)
+
 ### 3.2. Красный: `tests/arch/test_registry.py` (шов `validation_errors`)
 
 Сочетания полей — дело схемы реестра, а не сравнения с базой:
@@ -330,6 +332,8 @@ python -m unittest tests.ci.test_package_unica_opencode -v
 валидатор не различает эти состояния. Для новых полей фикстур RED — это
 падение парсинга/валидации, а не поведенческий дефект; наблюдаемое падение
 фиксируется в выводе этапа.
+
+> Выполнено: 2026-08-25 16:21 (3.2 — RED подтверждён: все 5 новых тестов validation_errors падают False is not true — валидатор не различает состояния; существующий test_supersession_is_mutual расширен списочной формой)
 
 ### 3.3. Зелёный
 
@@ -376,6 +380,8 @@ python -m unittest tests.ci.test_package_unica_opencode -v
   тестами 3.2 и в заявку этой записи не входят.
 - `python scripts/arch/registry.py --write-index`.
 
+> Выполнено: 2026-08-25 16:21 (3.3 — зелёная реализация immutability.py/registry.py, процессные записи согласованы, INV.REGISTRY.PRODUCT-RULE-SUPERSESSION-STAMP создана, индекс перегенерирован; сопутствующее: стражу добавлен якорь последнего принятого состояния origin/main — историческая перезаземлённая VERSION-LOCKSTEP из d4734f54 иначе делала upstream/main красной; механизм покрыт фикстурным test_an_edit_accepted_on_the_trusted_tip_is_history_not_a_live_change)
+
 ### 3.4. Проверка
 
 ```text
@@ -391,6 +397,8 @@ OpenCode/npm-записи (их будущие штампы обязаны св�
 база из критерия ревью 8. Продуктового поведения не меняется; после этапа в
 реестре нет двух active-правил с противоположными требованиями к правке
 product-правил (источник R1).
+
+> Выполнено: 2026-08-25 16:21 (3.4 — Ran 122 tests OK; registry --check, fate (233 subjects), immutability против origin/main (218 записей) и upstream/main (205 записей) — все зелёные)
 
 ---
 
