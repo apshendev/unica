@@ -94,17 +94,13 @@ def parse_workflow_jobs(workflow: str) -> dict[str, ParsedJob]:
                 continue
             raw = match.group(1).strip()
             if raw.startswith("["):
-                needs.extend(
-                    item.strip() for item in raw[1:-1].split(",") if item.strip()
-                )
+                needs.extend(item.strip() for item in raw[1:-1].split(",") if item.strip())
             elif raw:
                 needs.append(raw)
             else:
                 cursor = index + 1
                 while cursor < len(block_lines):
-                    item = re.fullmatch(
-                        r"      - ([A-Za-z0-9_-]+)", block_lines[cursor]
-                    )
+                    item = re.fullmatch(r"      - ([A-Za-z0-9_-]+)", block_lines[cursor])
                     if item is None:
                         break
                     needs.append(item.group(1))
@@ -118,13 +114,11 @@ def parse_workflow_jobs(workflow: str) -> dict[str, ParsedJob]:
             )
         )
         steps = tuple(
-            match.group(1).strip("\"'")
+            match.group(1).strip('"\'')
             for line in block_lines
             if (match := re.fullmatch(r"      - (?:name|uses): (.+)", line))
         )
-        jobs[name] = ParsedJob(
-            body=body, needs=tuple(needs), targets=targets, steps=steps
-        )
+        jobs[name] = ParsedJob(body=body, needs=tuple(needs), targets=targets, steps=steps)
     return jobs
 
 
@@ -138,9 +132,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
     def test_source_gate_checks_the_full_rust_and_python_workspace(self) -> None:
         text = self.release_text()
 
-        self.assertIn(
-            "cargo clippy --workspace --all-targets --all-features -- -D warnings", text
-        )
+        self.assertIn("cargo clippy --workspace --all-targets --all-features -- -D warnings", text)
         self.assertIn("cargo test --workspace -- --test-threads=1", text)
         self.assertIn("python -m unittest discover -s tests/ci --durations 20", text)
         self.assertIn("python -m unittest discover -s tests/dev --durations 20", text)
@@ -196,9 +188,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         ):
             with self.subTest(output=output):
                 self.assertIn(f"      {output}:", classifier)
-        self.assertIn(
-            "contains(github.event.pull_request.labels.*.name, 'ci:full')", classifier
-        )
+        self.assertIn("contains(github.event.pull_request.labels.*.name, 'ci:full')", classifier)
         self.assertIn("--force-full", classifier)
 
     def test_classifier_preserves_merge_base_for_triple_dot_diff(self) -> None:
@@ -239,7 +229,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
                     self.assertIsNone(
                         context,
                         f"{context} is interpolated into a run block; bind it "
-                        'to an env variable and read it as "$NAME"',
+                        "to an env variable and read it as \"$NAME\"",
                     )
 
         # An indentation scanner that silently matched nothing would pass this
@@ -256,9 +246,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertNotIn("cargo test", source)
         self.assertIn("search_integration_changed == 'true'", search_integration)
         self.assertIn("ci_changed == 'true'", search_integration)
-        self.assertIn(
-            "--test issue_89_workspace_service -- --ignored", search_integration
-        )
+        self.assertIn("--test issue_89_workspace_service -- --ignored", search_integration)
         self.assertNotIn("dtolnay/rust-toolchain", source)
         self.assertIn("runs-on: macos-14", primary)
         self.assertIn("rust_changed == 'true'", primary)
@@ -312,11 +300,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')",
             thin,
         )
-        for job_id in (
-            "publish-release-assets",
-            "smoke-thin-plugin",
-            "verify-published-assets",
-        ):
+        for job_id in ("publish-release-assets", "smoke-thin-plugin", "verify-published-assets"):
             with self.subTest(job_id=job_id):
                 job = job_block(text, job_id)
                 self.assertIn("github.event_name == 'push'", job)
@@ -426,10 +410,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             build,
         )
         self.assertNotIn("restore-keys:", build)
-        self.assertLess(
-            build.index("id: cargo-cache"),
-            build.index("scripts/ci/build-unica-tools.py"),
-        )
+        self.assertLess(build.index("id: cargo-cache"), build.index("scripts/ci/build-unica-tools.py"))
         self.assertIn("--metrics-file", build)
         self.assertIn("if: always()", build)
         self.assertIn("steps.cargo-cache.outcome", build)
@@ -491,9 +472,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             build,
         )
         self.assertIn('--plugin-root "$runtime_root"', build)
-        self.assertIn(
-            'executable="$runtime_root/bin/${{ matrix.target }}/unica"', build
-        )
+        self.assertIn('executable="$runtime_root/bin/${{ matrix.target }}/unica"', build)
         self.assertIn("timeout-minutes: 3", smoke_step)
         self.assertIn("--total-timeout-seconds 120", smoke_step)
 
@@ -543,7 +522,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertIn("Probe packaged bootstrap through the downloader", probe)
         self.assertIn("Smoke packaged bootstrap against published runtime", smoke)
         self.assertIn("scripts/ci/smoke-unica-bootstrap.py", smoke)
-        self.assertIn(" --plugin-root .build/thin/plugins/unica", smoke)
+        self.assertIn(' --plugin-root .build/thin/plugins/unica', smoke)
         self.assertIn(' --target "${{ matrix.target }}"', smoke)
         self.assertIn("needs: package-thin", probe)
         self.assertIn("needs: [package-thin, publish-release-assets]", smoke)
@@ -564,9 +543,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertNotIn(marker, release)
 
-    def test_source_repo_has_no_manual_or_scheduled_full_migration_workflow(
-        self,
-    ) -> None:
+    def test_source_repo_has_no_manual_or_scheduled_full_migration_workflow(self) -> None:
         release = self.release_text()
         violations: dict[str, list[str]] = {}
         workflows = sorted(
@@ -586,19 +563,11 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
 
         self.assertFalse(LEGACY_WORKFLOW.exists())
         self.assertNotIn("unica-legacy-migration.yml", release)
-        self.assertEqual(
-            {}, violations, f"source workflows own full migration policy: {violations}"
-        )
+        self.assertEqual({}, violations, f"source workflows own full migration policy: {violations}")
 
-    def test_release_assets_are_published_without_pages_dependency_and_redownloaded(
-        self,
-    ) -> None:
+    def test_release_assets_are_published_without_pages_dependency_and_redownloaded(self) -> None:
         text = self.release_text()
-        publish = text[
-            text.index("  publish-release-assets:") : text.index(
-                "  verify-published-assets:"
-            )
-        ]
+        publish = text[text.index("  publish-release-assets:") : text.index("  verify-published-assets:")]
         verify = text[text.index("  verify-published-assets:") :]
 
         self.assertNotIn("publish-assessment-pages", publish)
@@ -612,9 +581,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
 
     def test_release_notes_are_generated_without_repository_docs(self) -> None:
         text = self.release_text()
-        publish = text[
-            text.index("  publish-release-assets:") : text.index("  smoke-thin-plugin:")
-        ]
+        publish = text[text.index("  publish-release-assets:") : text.index("  smoke-thin-plugin:")]
 
         self.assertIn("generate_release_notes: true", publish)
         self.assertNotIn("body_path:", publish)
@@ -622,22 +589,14 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
 
     def test_assessment_is_independent_from_runtime_publication(self) -> None:
         text = self.release_text()
-        assessment = text[
-            text.index("  release-assessment:") : text.index(
-                "  publish-release-assets:"
-            )
-        ]
+        assessment = text[text.index("  release-assessment:") : text.index("  publish-release-assets:")]
 
         self.assertIn("always()", assessment)
         self.assertIn("unica-runtime-linux-x64.tar.gz", assessment)
         self.assertNotIn("publish-release-assets", assessment)
-        self.assertIn(
-            "if: always()", text[text.index("name: unica-release-assessment") - 120 :]
-        )
+        self.assertIn("if: always()", text[text.index("name: unica-release-assessment") - 120 :])
 
-    def test_pr_permissions_are_read_only_and_cross_repo_write_uses_secret(
-        self,
-    ) -> None:
+    def test_pr_permissions_are_read_only_and_cross_repo_write_uses_secret(self) -> None:
         release = self.release_text()
         publish = self.publish_text()
 
@@ -727,9 +686,9 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         publish_script = (
             REPO_ROOT / "scripts" / "ci" / "publish-unica-opencode.py"
         ).read_text(encoding="utf-8")
-        gate_script = (REPO_ROOT / "scripts" / "ci" / "evaluate-ci-gate.py").read_text(
-            encoding="utf-8"
-        )
+        gate_script = (
+            REPO_ROOT / "scripts" / "ci" / "evaluate-ci-gate.py"
+        ).read_text(encoding="utf-8")
         self.assertIn('FORK_REPOSITORY = "apshendev/unica"', publish_script)
         self.assertIn('FORK_REPOSITORY = "apshendev/unica"', gate_script)
 
@@ -769,7 +728,9 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
                 # Верификатор запускается из checkout: относительный путь к
                 # скрипту и корню плагина разрешается, артефакты потребителя
                 # передаются абсолютными путями.
-                self.assertIn('"$RUNNER_TEMP/opencode-consumer/skills.json"', block)
+                self.assertIn(
+                    '"$RUNNER_TEMP/opencode-consumer/skills.json"', block
+                )
                 self.assertIn('"$RUNNER_TEMP/opencode-consumer/mcp.txt"', block)
 
         self.assertNotIn("continue-on-error", windows)
@@ -791,13 +752,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertIn("workflow_run:", text)
         self.assertIn("workflow_dispatch:", text)
         self.assertIn("source_run_id:", text)
-        for job in (
-            "stage:",
-            "tag:",
-            "verify-fresh-install:",
-            "verify-upgrade:",
-            "promote:",
-        ):
+        for job in ("stage:", "tag:", "verify-fresh-install:", "verify-upgrade:", "promote:"):
             self.assertIn(f"\n  {job}", text)
         self.assertIn("needs: stage", text)
         self.assertIn("needs: [stage, tag]", text)
@@ -822,9 +777,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         self.assertEqual(text.count("require_forward()"), 2)
         self.assertEqual(text.count('test "$newest" = "$RELEASE_TAG"'), 2)
         self.assertEqual(
-            text.count(
-                ".agents/plugins/marketplace.json .claude-plugin/marketplace.json"
-            ),
+            text.count(".agents/plugins/marketplace.json .claude-plugin/marketplace.json"),
             3,  # both guard loops and the promote `git add`
         )
         self.assertIn('require_forward "HEAD~1"', text)
@@ -832,10 +785,7 @@ class UnicaWorkflowGuardrailTests(unittest.TestCase):
         # very tag its manifest declares — dispatch cannot smuggle another one.
         self.assertIn('test "$run_event" = "push"', text)
         self.assertIn('test "$run_branch" = "$RELEASE_TAG"', text)
-        self.assertIn(
-            'gh api "repos/IngvarConsulting/unica/git/ref/tags/${RELEASE_TAG}" --silent',
-            text,
-        )
+        self.assertIn('gh api "repos/IngvarConsulting/unica/git/ref/tags/${RELEASE_TAG}" --silent', text)
         self.assertIn("payload/plugins/unica/.codex-plugin/plugin.json", text)
         self.assertIn("payload/plugins/unica/.mcp.json", text)
         self.assertIn("payload/.agents/plugins/marketplace.json", text)
@@ -887,9 +837,7 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
         ):
             self.assertIn(glob, self.release, glob)
 
-    def test_bsp_runtime_assessment_receives_the_engine_its_search_requires(
-        self,
-    ) -> None:
+    def test_bsp_runtime_assessment_receives_the_engine_its_search_requires(self) -> None:
         build = job_block(self.release, "build-tools")
         assessment = job_block(self.release, "release-assessment")
 
@@ -897,9 +845,7 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
         self.assertIn("stage-unica-assessment-engine.py", build)
         self.assertIn("--artifact bsl-analyzer", build)
         self.assertIn("--artifact rlm-tools-bsl", build)
-        self.assertIn(
-            "--out-archive .build/unica-assessment-engine-linux-x64.tar.gz", build
-        )
+        self.assertIn("--out-archive .build/unica-assessment-engine-linux-x64.tar.gz", build)
         self.assertIn("name: unica-assessment-engine-linux-x64", assessment)
         self.assertIn(
             "--engine-overlay .build/assessment-engine/unica-assessment-engine-linux-x64.tar.gz",
@@ -947,7 +893,7 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
         self.assertIn("tools.json", build.body)
         self.assertIn('manifest["runtimeFiles"]', build.body)
-        self.assertIn('--target "${{ matrix.target }}"', build.body)
+        self.assertIn("--target \"${{ matrix.target }}\"", build.body)
 
         expected_needs = {
             "package-thin": ("build-tools",),
@@ -964,25 +910,19 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
 
         local_verifier = "python scripts/ci/verify-release-assets.py"
         self.assertIn(local_verifier, build.body)
-        self.assertIn(
-            '--asset-dir ".build/runtime-assets/${{ matrix.target }}"', build.body
-        )
+        self.assertIn('--asset-dir ".build/runtime-assets/${{ matrix.target }}"', build.body)
         self.assertIn('--target "${{ matrix.target }}"', build.body)
 
         published = jobs["verify-published-assets"]
         published_lifecycle = (
-            "gh release download \"$GITHUB_REF_NAME\" --pattern 'unica-runtime-*' --dir published",
+            'gh release download "$GITHUB_REF_NAME" --pattern \'unica-runtime-*\' --dir published',
             local_verifier + " --asset-dir published",
             "name: unica-thin-marketplace",
             "python scripts/ci/verify-delivery-reachable.py",
         )
-        published_positions = [
-            published.body.index(step) for step in published_lifecycle
-        ]
+        published_positions = [published.body.index(step) for step in published_lifecycle]
         self.assertEqual(published_positions, sorted(published_positions))
-        self.assertNotIn(
-            "--target", published.body, "published verification must cover every target"
-        )
+        self.assertNotIn("--target", published.body, "published verification must cover every target")
 
         smoke = jobs["smoke-thin-plugin"]
         smoke_lifecycle = (
@@ -992,7 +932,7 @@ class ArtifactSplitPublicationTests(unittest.TestCase):
         smoke_positions = [smoke.steps.index(step) for step in smoke_lifecycle]
         self.assertEqual(smoke_positions, sorted(smoke_positions))
         self.assertIn("matrix.target == 'linux-x64'", smoke.body)
-        self.assertIn("prefetch --plugin-root .build/thin/plugins/unica", smoke.body)
+        self.assertIn('prefetch --plugin-root .build/thin/plugins/unica', smoke.body)
 
 
 class PrereleaseNeverReachesConsumersTests(unittest.TestCase):
