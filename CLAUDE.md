@@ -13,3 +13,18 @@ hygiene, and development rules. That file applies to Claude Code unchanged.
   character outside `A-Za-z0-9_-` replaced by `_`. The skill prose names tools in
   their canonical dotted form, so `unica.meta.info` is callable as
   `mcp__plugin_unica_unica__unica_meta_info`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues of the fork (`apshendev/unica`) via `gh`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical five; label strings equal role names. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context, adapted to the existing `arch/` registry: decisions live in
+`arch/decisions/` (`DEC.*`), glossary lazily in root `CONTEXT.md`. See `docs/agents/domain.md`.
