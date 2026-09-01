@@ -3,10 +3,12 @@
 // Unica is the product; this module is only the OpenCode host adapter, and
 // npm is its delivery address. It exposes exactly one plugin hook — the
 // configuration hook — which adds the packaged skills root to OpenCode's
-// skill discovery and takes ownership of the `unica` entry in the MCP map by
-// launching the packaged native bootstrap directly. Runtime download,
-// verification, and caching stay in the bootstrap: they are not reimplemented
-// here (DEC.2026-08-24.OPENCODE-ADAPTER-DELIVERY).
+// skill discovery, takes ownership of the `unica` entry in the MCP map by
+// launching the packaged native bootstrap directly, and grants one narrow
+// external_directory rule so skills can read the packaged references/
+// without a permission prompt. Runtime download, verification, and caching
+// stay in the bootstrap: they are not reimplemented here
+// (DEC.2026-08-24.OPENCODE-ADAPTER-DELIVERY).
 //
 // A local-debug candidate carries the generated marker `opencode/
 // local-debug.json` (CTR.HOST.OPENCODE-LAUNCH-MODES): with a valid marker
@@ -23,6 +25,7 @@ const PACKAGE_ROOT = toPosix(
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
 )
 const SKILLS_ROOT = `${PACKAGE_ROOT}/skills`
+const REFERENCES_GLOB = `${PACKAGE_ROOT}/references/*`
 const LOCAL_DEBUG_MARKER = `${PACKAGE_ROOT}/opencode/local-debug.json`
 
 // The MCP timeout covers connection startup as well as requests in the
@@ -139,6 +142,31 @@ function installSkills(config) {
   }
 }
 
+// The packaged skills read shared material through `../../references/...`
+// links, and the installed package root is external to the OpenCode
+// workspace, so every read would otherwise raise an external_directory
+// prompt. The adapter owns exactly one narrow rule — the packaged
+// references glob — and never widens access to the rest of the package,
+// node_modules, or any other directory: user rules survive untouched, and
+// a string policy becomes a map that keeps the original policy on "*"
+// (CTR.HOST.OPENCODE-REFERENCE-ACCESS).
+function installReferenceAccess(config) {
+  const permission = config.permission ?? (config.permission = {})
+  const external = permission.external_directory
+  if (typeof external === "string") {
+    permission.external_directory = { "*": external }
+  } else if (
+    external === null ||
+    typeof external !== "object" ||
+    Array.isArray(external)
+  ) {
+    permission.external_directory = {}
+  }
+  // Assignment, not append: a repeated hook run and any previous value for
+  // the glob leave exactly one owned entry.
+  permission.external_directory[REFERENCES_GLOB] = "allow"
+}
+
 // The packaged core binary name: the release pipeline writes `unica.exe` on
 // win-x64, while a hand-assembled debug root may carry the extension-less
 // spelling. The launcher uses the first name that exists.
@@ -188,5 +216,6 @@ export const UnicaOpenCodePlugin = async () => ({
   config: async (config) => {
     installSkills(config)
     installMcp(config)
+    installReferenceAccess(config)
   },
 })

@@ -144,7 +144,10 @@ class VerifySkillsTests(unittest.TestCase):
 
         self.assertIn("plugin root", str(ctx.exception))
 
-    def test_skill_locations_from_two_roots_are_refused(self) -> None:
+    def test_foreign_entries_do_not_fail_the_smoke(self) -> None:
+        # Посторонние записи — встроенные скиллы хоста и пользовательские
+        # каталоги — проверка не касается: их расположение вне
+        # установленного корня не отказ (план 2026-09-01, п. 2).
         payload = self.expected_listing()
         payload.append(
             {
@@ -153,10 +156,7 @@ class VerifySkillsTests(unittest.TestCase):
             }
         )
 
-        with self.assertRaises(SystemExit) as ctx:
-            self.run_verify(payload)
-
-        self.assertIn("plugin root", str(ctx.exception))
+        self.run_verify(payload)
 
     def test_locations_in_posix_syntax_pass_for_the_linux_target(self) -> None:
         posix_root = self.root.as_posix()
@@ -166,6 +166,173 @@ class VerifySkillsTests(unittest.TestCase):
         ]
 
         self.run_verify(payload, plugin_root=posix_root, target="linux-x64")
+
+
+class VerifySkillsConsumerListingTests(unittest.TestCase):
+    """Реальный листинг потребителя: 73 упакованных скилла плюс встроенные.
+
+    `opencode debug skill` показывает не только скиллы установленного плагина,
+    но и встроенные скиллы хоста (`customize-opencode` с location
+    `<built-in>`) и пользовательские каталоги. Проверка обязана требовать
+    только упакованные имена и их расположение, игнорируя посторонние записи.
+    """
+
+    BUILT_IN = {"name": "customize-opencode", "location": "<built-in>"}
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        # Ровно 73 упакованных скилла — численность реального плагина.
+        self.packaged = [f"unica-{index:02d}" for index in range(1, 74)]
+        skills = self.root / "skills"
+        for name in self.packaged:
+            (skills / name).mkdir(parents=True)
+            (skills / name / "SKILL.md").write_text(
+                f"---\nname: {name}\n---\n", encoding="utf-8"
+            )
+
+    def entry(self, name: str, *, root: str | None = None) -> dict:
+        base = root if root is not None else str(self.root)
+        return {"name": name, "location": f"{base}\\skills\\{name}"}
+
+    def consumer_listing(self) -> list[dict]:
+        return [self.entry(name) for name in self.packaged] + [dict(self.BUILT_IN)]
+
+    def run_verify(self, payload, *, plugin_root: Path | None = None) -> None:
+        module = load_verifier_module()
+        json_path = self.root / "skills.json"
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        module.main(
+            [
+                "verify-skills",
+                "--json",
+                str(json_path),
+                "--plugin-root",
+                str(plugin_root if plugin_root is not None else self.root),
+                "--target",
+                "win-x64",
+            ]
+        )
+
+    def test_the_builtin_customize_opencode_skill_does_not_fail_the_smoke(self) -> None:
+        self.run_verify(self.consumer_listing())
+
+    def test_a_foreign_same_name_skill_displaces_a_packaged_one_and_fails(
+        self,
+    ) -> None:
+        payload = self.consumer_listing()
+        payload[0] = self.entry(self.packaged[0], root=r"C:\other\package")
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(payload)
+
+        self.assertIn(self.packaged[0], str(ctx.exception))
+        self.assertIn("plugin root", str(ctx.exception))
+
+    def test_an_empty_packaged_skills_directory_fails_closed(self) -> None:
+        # Пустой (но существующий) каталог skills не должен давать
+        # вакуумный успех: без упакованных скиллов проверять нечего.
+        empty_root = self.root / "empty-plugin"
+        (empty_root / "skills").mkdir(parents=True)
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify([], plugin_root=empty_root)
+
+        self.assertIn("no packaged skills", str(ctx.exception))
+
+
+class VerifyAgentToolsTests(unittest.TestCase):
+    """Проверка agent-visible инструментов build-агента потребителя.
+
+    Ledger задаёт канонические имена `unica.*`; OpenCode показывает их как
+    `<server>_<имя с заменой недопустимых символов>`. Проверка требует
+    каждое имя в `agent.tools` со значением `true`: подключённый MCP с
+    пустым или частичным `tools/list` исправным не считается.
+    """
+
+    LEDGER = {
+        "unica.project.map": {"scope": "in"},
+        "unica.cf.info": {"scope": "in"},
+        "unica.mxl.decompile": {"scope": "retiring"},
+    }
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.ledger_path = self.root / "tool-surface-review.json"
+        self.ledger_path.write_text(json.dumps(self.LEDGER), encoding="utf-8")
+
+    def agent_path(self, tools: dict) -> Path:
+        path = self.root / "agent.json"
+        payload = {"model": "test/model", "tools": tools}
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def complete_tools(self) -> dict:
+        return {
+            "read": True,
+            "skill": True,
+            "unica_unica_project_map": True,
+            "unica_unica_cf_info": True,
+            "unica_unica_mxl_decompile": True,
+        }
+
+    def run_verify(self, tools: dict, *, ledger: Path | None = None) -> None:
+        module = load_verifier_module()
+        module.main(
+            [
+                "verify-agent-tools",
+                "--agent-json",
+                str(self.agent_path(tools)),
+                "--ledger",
+                str(ledger if ledger is not None else self.ledger_path),
+                "--server",
+                "unica",
+            ]
+        )
+
+    def test_the_complete_enabled_tool_set_passes(self) -> None:
+        self.run_verify(self.complete_tools())
+
+    def test_a_missing_tool_fails_the_smoke(self) -> None:
+        tools = self.complete_tools()
+        del tools["unica_unica_project_map"]
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(tools)
+
+        self.assertIn("unica_unica_project_map", str(ctx.exception))
+        self.assertIn("unica.project.map", str(ctx.exception))
+
+    def test_a_disabled_tool_fails_the_smoke(self) -> None:
+        tools = self.complete_tools()
+        tools["unica_unica_cf_info"] = False
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(tools)
+
+        self.assertIn("not enabled", str(ctx.exception))
+        self.assertIn("unica_unica_cf_info", str(ctx.exception))
+
+    def test_an_empty_tools_map_fails_closed(self) -> None:
+        with self.assertRaises(SystemExit):
+            self.run_verify({})
+
+    def test_a_foreign_name_variant_does_not_satisfy_the_canonical_tool(
+        self,
+    ) -> None:
+        tools = self.complete_tools()
+        del tools["unica_unica_project_map"]
+        # Другая транслитерация того же инструмента не подменяет ожидаемое
+        # имя: точечная замена символа должна была стать `_`.
+        tools["unica_unica-project-map"] = True
+
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(tools)
+
+        self.assertIn("missing the tool unica_unica_project_map", str(ctx.exception))
 
 
 # OpenCode 1.18.22 печатает `opencode mcp list` clack-рамкой с ANSI-цветами.
@@ -260,6 +427,44 @@ class VerifyMcpTests(unittest.TestCase):
             + colored_separator()
             + colored_footer(1)
         )
+
+    def test_a_connected_unica_server_through_the_packaged_core_binary_passes(
+        self,
+    ) -> None:
+        # Local-debug кандидат: маркер переключает mcp.unica на прямой запуск
+        # упакованного ядра bin/<target>/unica(.exe) без bootstrap
+        # (CTR.HOST.OPENCODE-LAUNCH-MODES).
+        for target, plugin_root, binary in (
+            ("win-x64", WINDOWS_PLUGIN_ROOT, "unica.exe"),
+            ("linux-x64", LINUX_PLUGIN_ROOT, "unica"),
+        ):
+            with self.subTest(target=target):
+                separator = "\\" if target == "win-x64" else "/"
+                command = (
+                    f"{plugin_root}{separator}bin{separator}{target}{separator}{binary}"
+                )
+                self.run_verify(
+                    COLORED_HEADER + self.unica_frame(command),
+                    plugin_root=plugin_root,
+                    target=target,
+                )
+
+    def test_a_core_binary_outside_the_installed_package_root_is_refused(
+        self,
+    ) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(COLORED_HEADER + self.unica_frame(r"D:\tools\unica.exe"))
+
+        self.assertIn("packaged", str(ctx.exception))
+
+    def test_a_cargo_run_core_command_is_refused(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_verify(
+                COLORED_HEADER
+                + self.unica_frame("cargo run --release -p unica-coder --bin unica")
+            )
+
+        self.assertIn("packaged", str(ctx.exception))
 
     def test_a_connected_unica_server_through_the_packaged_bootstrap_passes(
         self,

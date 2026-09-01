@@ -294,7 +294,10 @@ def main(argv: list[str] | None = None) -> int:
 
     rendered = render_index(found)
     if arguments.write_index:
-        INDEX_PATH.write_text(rendered, encoding="utf-8")
+        # Фиксированный LF: индекс обязан быть побайтово одинаков на любой
+        # ОС, иначе `git diff --check` считает \r добавленных строк
+        # trailing whitespace.
+        INDEX_PATH.write_text(rendered, encoding="utf-8", newline="\n")
         print(f"написано: {INDEX_PATH.relative_to(REPO_ROOT)}")
         return 0
     if arguments.check:

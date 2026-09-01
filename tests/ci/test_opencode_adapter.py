@@ -9,6 +9,7 @@ the module OpenCode would load, with no private helpers involved.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -396,6 +397,127 @@ class OpenCodeAdapterLocalDebugTests(unittest.TestCase):
 
 def to_posix(value: str) -> str:
     return value.replace("\\", "/")
+
+
+class OpenCodeAdapterReferenceAccessTests(unittest.TestCase):
+    """Точечный доступ к упакованному references/ из конфигурационного хука.
+
+    Скиллы читают общие материалы по ссылкам `../../references/...`; без
+    явного permission OpenCode требует external_directory на каждое чтение
+    из установленного npm-пакета. Адаптер обязан добавить ровно одно узкое
+    правило для упакованного references/, сохраняя пользовательскую политику
+    остальных путей и не расширяя доступ наружу пакета.
+    """
+
+    def references_rule(self) -> str:
+        return f"{package_root()}/references/*"
+
+    def run_hook(self, config: dict) -> dict:
+        report = run_adapter({"adapterPath": str(ADAPTER_PATH), "config": config})
+        self.assertTrue(report["ok"], report)
+        return report["config"]
+
+    def external_directory(self, config: dict) -> dict:
+        self.assertIn("permission", config)
+        self.assertIn("external_directory", config["permission"])
+        return config["permission"]["external_directory"]
+
+    def test_a_config_without_permissions_gains_only_the_references_rule(self) -> None:
+        config = self.run_hook({})
+
+        self.assertEqual(
+            self.external_directory(config), {self.references_rule(): "allow"}
+        )
+
+    def test_existing_permission_rules_survive_and_gain_the_references_rule(
+        self,
+    ) -> None:
+        config = self.run_hook(
+            {
+                "permission": {
+                    "external_directory": {
+                        "/work/projects/*": "allow",
+                        "*": "ask",
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(
+            self.external_directory(config),
+            {
+                "/work/projects/*": "allow",
+                "*": "ask",
+                self.references_rule(): "allow",
+            },
+        )
+
+    def test_a_string_external_directory_policy_becomes_a_map(self) -> None:
+        config = self.run_hook({"permission": {"external_directory": "ask"}})
+
+        # Исходная политика остаётся правилом "*", узкое разрешение
+        # добавляется после него; пользовательская политика остальных путей
+        # не меняется.
+        self.assertEqual(
+            self.external_directory(config),
+            {"*": "ask", self.references_rule(): "allow"},
+        )
+
+    def test_a_preexisting_rule_for_the_exact_glob_is_owned_not_duplicated(
+        self,
+    ) -> None:
+        config = self.run_hook(
+            {"permission": {"external_directory": {self.references_rule(): "deny"}}}
+        )
+
+        # Адаптер владеет точным правилом packaged references, как владеет
+        # `mcp.unica`: существующее значение заменяется, записи не дублируются.
+        self.assertEqual(
+            self.external_directory(config), {self.references_rule(): "allow"}
+        )
+
+    def test_repeated_hook_runs_do_not_duplicate_the_references_rule(self) -> None:
+        # Каждый запуск драйвера — отдельный Node-процесс: повторный запуск
+        # хука моделируется обратной подачей мутированной конфигурации.
+        config: dict = {}
+        for _ in range(3):
+            report = run_adapter({"adapterPath": str(ADAPTER_PATH), "config": config})
+            self.assertTrue(report["ok"], report)
+            config = report["config"]
+
+        rules = self.external_directory(config)
+        self.assertEqual(list(rules).count(self.references_rule()), 1)
+        self.assertEqual(rules[self.references_rule()], "allow")
+
+    def test_every_packaged_skill_reference_link_resolves_inside_the_package_root(
+        self,
+    ) -> None:
+        """Ссылки `../../references/...` из SKILL.md ведут внутрь пакета.
+
+        Правило доступа бессмысленно, если относительные ссылки скиллов
+        разрешаются наружу упакованного корня: проверка фиксирует, что каждая
+        ссылка попадает в существующий файл `references/` того же корня.
+        """
+        package = REPO_ROOT / "plugins" / "unica"
+        references = (package / "references").resolve()
+        pattern = re.compile(r"\.\./\.\./references/([^\s)`\"'\]]+)")
+        resolved = 0
+        for skill_md in sorted((package / "skills").glob("*/SKILL.md")):
+            for match in pattern.finditer(skill_md.read_text(encoding="utf-8")):
+                rel = match.group(1).rstrip(".,);:")
+                target = (references / rel).resolve()
+                with self.subTest(skill=skill_md.parent.name, link=rel):
+                    self.assertTrue(
+                        target.exists(), f"reference target does not exist: {rel}"
+                    )
+                    self.assertTrue(
+                        target.is_relative_to(references),
+                        f"reference target escapes the packaged references/: {rel}",
+                    )
+                resolved += 1
+        # 27 скиллов несут общие ссылки; пустой обход сделал бы проверку
+        # бессильной.
+        self.assertGreaterEqual(resolved, 27)
 
 
 if __name__ == "__main__":

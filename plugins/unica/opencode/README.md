@@ -99,15 +99,75 @@ runtime с нуля (подробности в разделе «Первый з�
 4. Шаги 2–6 рецепта release-кандидата выше без изменений: каталог-потребитель,
    `npm install --ignore-scripts <абсолютный путь к .tgz>`, `file://` URI
    установленного пакета в `opencode.json`, изоляция окружения, полный
-   перезапуск OpenCode и наблюдения `opencode debug skill` / `opencode mcp list`.
+   перезапуск OpenCode. Наблюдения собирает расширенный набор обязательных
+   проверок (следующий раздел).
+
+Headless-наблюдения (из каталога потребителя, без LLM-провайдера и
+пользовательного prompt):
+
+```sh
+opencode debug skill > skills.json
+opencode mcp list > mcp.txt
+opencode debug agent build --tool skill --params '{"name":"code-search"}' > skill-load.json
+opencode debug agent build --tool read --params '{"filePath":"<plugin-root>/references/platform/platform-mechanics.md"}' > reference-read.json
+```
+
+`<plugin-root>` — абсолютный путь к
+`node_modules/@apshendev/unica-opencode` потребителя. Эти четыре артефакта
+собирает headless-хост: `skill` и `read` — нативные инструменты OpenCode.
+
+MCP-инструменты `unica_*` headless-хост не инициализирует (проверено на
+OpenCode 1.18.22 и 1.18.25 по DEBUG-логам: `debug agent build` и `serve`
+не поднимают MCP-подключения плагина), поэтому полная поверхность агента и
+живой вызов MCP-инструмента собираются в перезапущенной живой сессии
+OpenCode с тем же project-конфигом (`plugin` с `file://` URI установленного
+пакета):
+
+- поверхность агента экспортируется в `agent-tools-live.json` вида
+  `{"tools": {"unica_unica_project_map": true, ...}}` — по одному ключу
+  `true` на каждый видимый инструмент живой сессии;
+- `project-map.json` — JSON-ответ вызова `unica_unica_project_map` из живой
+  сессии.
+
+Артефакты проверяются верификатором репозитория:
+
+```sh
+python scripts/ci/smoke-opencode-consumer.py verify-skills \
+  --json skills.json \
+  --plugin-root "$(pwd)/node_modules/@apshendev/unica-opencode" \
+  --target win-x64
+python scripts/ci/smoke-opencode-consumer.py verify-mcp \
+  --output mcp.txt \
+  --plugin-root "$(pwd)/node_modules/@apshendev/unica-opencode" \
+  --target win-x64
+python scripts/ci/smoke-opencode-consumer.py verify-agent-tools \
+  --agent-json agent-tools-live.json \
+  --ledger arch/tool-surface-review.json \
+  --server unica
+```
+
+Ожидания: `skills.json` перечисляет все упакованные навыки под установленным
+npm-корнем (встроенные навыки хоста вроде `customize-opencode` проверке не
+мешают); `mcp.txt` показывает `unica connected` с командой прямого запуска
+`bin/win-x64/unica.exe`; `agent-tools-live.json` включает все инструменты
+`unica_unica_*` из ledger со значением `true`; `skill-load.json` содержит
+`Loaded skill: code-search`; `project-map.json` — ответ MCP-инструмента без
+`Tool not found` и permission denial; `reference-read.json` — прочитанный
+файл packaged references без запроса external_directory.
 
 Отличия от release-кандидата: упаковщик записывает маркер
-`opencode/local-debug.json`, по которому адаптер запускает упакованное ядро
+`opencode/local-debug.json`, по которому адаптер запускает упаковленное ядро
 `bin/<target>/unica(.exe)` напрямую — bootstrap не используется, ядро runtime
 не скачивается, и `opencode mcp list` показывает команду установленного
 бинарника вместо bootstrap. Маркер с чужой целью (например, `linux-x64` на
 Windows-хосте) даёт явный отказ при инициализации. Такой кандидат —
 development-сборка: публикация в npm отказывает ему до первого вызова npm.
+
+Состав local-debug `.tgz`: все 73 навыка (`skills/*/SKILL.md`) и общий
+`references/` включены в архив целиком, а не устанавливаются отдельными npm
+dependencies; ядро лежит в `bin/win-x64/unica.exe`. Адаптер разрешает чтение
+только упакованного `references/` (`CTR.HOST.OPENCODE-REFERENCE-ACCESS`) и не
+открывает доступ к остальным внешним каталогам.
 
 ## Установка из npm
 
@@ -128,6 +188,11 @@ development-сборка: публикация в npm отказывает ем�
 
 - один раз добавляет упакованный каталог `skills/` в пути навыков; собственные
   пути и удалённые URL навыков пользователя сохраняются;
+- добавляет одно узкое правило `permission.external_directory` — чтение
+  упакованного `references/*`: навыки читают общие материалы по ссылкам
+  `../../references/...` без запроса external_directory, а политика
+  пользователя для остальных внешних каталогов сохраняется
+  (`CTR.HOST.OPENCODE-REFERENCE-ACCESS`);
 - берёт владение записью `mcp.unica`: значение `mcp.unica` заменяется
   упакованным определением, поэтому устаревшая или несовместимая ручная запись
   не помешает запуску упакованного сервера; остальные записи MCP-серверов

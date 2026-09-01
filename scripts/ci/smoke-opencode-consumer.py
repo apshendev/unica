@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
 """Turn raw OpenCode consumer output into a release decision.
 
-Two verifications, one script:
+Three verifications, one script:
 
 - ``verify-skills``: the JSON listing of ``opencode debug skill`` must
   contain every prompt-visible packaged skill of the installed plugin root,
-  each with a location under ``<plugin-root>/skills``.
+  each with a location under ``<plugin-root>/skills/<name>``. Entries the
+  plugin does not package — host built-ins (``<built-in>``), user skill
+  directories, other plugins — are ignored.
+- ``verify-agent-tools``: the JSON of ``opencode debug agent build`` must
+  carry every canonical ``unica.*`` tool of the ledger under its
+  OpenCode-visible name, each enabled. The name transform follows OpenCode
+  1.18.22: invalid characters become ``_`` and the MCP server name is
+  prefixed, so ``unica.project.map`` is visible as
+  ``unica_unica_project_map``.
 - ``verify-mcp``: the text of ``opencode mcp list`` must show ``unica``
-  connected and launched through the packaged bootstrap of the same root.
+  connected and launched through the packaged bootstrap of the same root
+  (release candidate) or its packaged core binary
+  ``bin/<target>/unica(.exe)`` (local-debug candidate).
 
 Path normalization follows ``--target``, never the host OS: ``win-x64``
 normalizes with ``ntpath`` semantics (both separators, case-insensitive),
@@ -53,11 +63,17 @@ def packaged_skill_names(plugin_root: Path) -> set[str]:
     skills = plugin_root / "skills"
     if not skills.is_dir():
         raise SystemExit(f"packaged skills directory not found: {skills}")
-    return {
+    names = {
         entry.name
         for entry in sorted(skills.iterdir())
         if (entry / "SKILL.md").is_file()
     }
+    if not names:
+        raise SystemExit(
+            f"no packaged skills under {skills}: the plugin packages 73 skills, "
+            "an empty skills directory means the smoke verified nothing"
+        )
+    return names
 
 
 def listed_skill_entries(payload) -> list[tuple[str, str]]:
@@ -90,34 +106,78 @@ def verify_skills(json_path: Path, plugin_root: Path, target: str) -> None:
     except (OSError, json.JSONDecodeError) as error:
         raise SystemExit(f"consumer skill listing is unreadable: {error}") from error
     entries = listed_skill_entries(payload)
-    listed = {name for name, _ in entries}
-    missing = sorted(packaged_skill_names(plugin_root) - listed)
-    if missing:
-        raise SystemExit(
-            "consumer did not discover packaged skills: " + ", ".join(missing)
-        )
+    packaged = packaged_skill_names(plugin_root)
 
     # Аргумент — реальный каталог: его текст обязан прийти в синтаксисе
     # target, иначе posix-нормализация не увидит в нём разделителей.
     root_text = plugin_root.as_posix() if target == "linux-x64" else str(plugin_root)
     root = _components(root_text, target)
-    expected_prefix = root + ("skills",)
+    seen: set[str] = set()
     for name, location in entries:
+        if name not in packaged:
+            # Посторонние записи — встроенные скиллы хоста (`<built-in>`),
+            # пользовательские каталоги и другие плагины — проверке не
+            # подлежат: проверяются только имена упакованных скиллов.
+            continue
+        skill_segment = name.casefold() if target == "win-x64" else name
+        expected_prefix = root + ("skills", skill_segment)
         components = _components(location, target)
-        if (
-            len(components) <= len(expected_prefix)
-            or components[: len(expected_prefix)] != expected_prefix
-        ):
+        if components[: len(expected_prefix)] != expected_prefix:
             raise SystemExit(
                 f"skill {name} location is outside the installed plugin root: "
                 f"{location}"
             )
+        seen.add(name)
+    missing = sorted(packaged - seen)
+    if missing:
+        raise SystemExit(
+            "consumer did not discover packaged skills: " + ", ".join(missing)
+        )
 
 
 def _strip_ansi(line: str) -> str:
     line = _ANSI_OSC.sub("", line)
     line = _ANSI.sub("", line)
     return line.replace("\r", "")
+
+
+_TOOL_NAME_INVALID = re.compile(r"[^A-Za-z0-9_]")
+
+
+def opencode_tool_name(server: str, canonical: str) -> str:
+    """The OpenCode-visible name of a canonical MCP tool name.
+
+    OpenCode 1.18.22 replaces characters invalid in a tool name with `_` and
+    prefixes the name with the MCP server it comes from:
+    ``unica.project.map`` -> ``unica_unica_project_map``.
+    """
+    return f"{server}_{_TOOL_NAME_INVALID.sub('_', canonical)}"
+
+
+def verify_agent_tools(agent_path: Path, ledger_path: Path, server: str) -> None:
+    try:
+        agent = json.loads(agent_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"consumer agent build is unreadable: {error}") from error
+    tools = agent.get("tools") if isinstance(agent, dict) else None
+    if not isinstance(tools, dict):
+        raise SystemExit("agent build does not carry a tools map")
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"tool surface ledger is unreadable: {error}") from error
+    if not isinstance(ledger, dict) or not ledger:
+        raise SystemExit("tool surface ledger must be a non-empty object")
+    for canonical in sorted(ledger):
+        visible = opencode_tool_name(server, canonical)
+        if visible not in tools:
+            raise SystemExit(
+                f"agent build is missing the tool {visible} (canonical {canonical})"
+            )
+        if tools[visible] is not True:
+            raise SystemExit(
+                f"agent tool {visible} (canonical {canonical}) is not enabled"
+            )
 
 
 def _bootstrap_is_packaged(details: list[str], plugin_root: str, target: str) -> bool:
@@ -133,6 +193,25 @@ def _bootstrap_is_packaged(details: list[str], plugin_root: str, target: str) ->
     if _components(tokens[0], target) != expected_command:
         return False
     return _components(tokens[3], target) == root
+
+
+def _core_binary_is_packaged(details: list[str], plugin_root: str, target: str) -> bool:
+    """The first detail is the packaged core binary of a local-debug candidate.
+
+    The local-debug marker switches `mcp.unica` to a direct single-token
+    launch of ``<plugin-root>/bin/<target>/unica(.exe)`` without arguments
+    (CTR.HOST.OPENCODE-LAUNCH-MODES); ``cargo run`` and other commands do
+    not qualify.
+    """
+    if not details:
+        return False
+    tokens = details[0].split()
+    if len(tokens) != 1:
+        return False
+    root = _components(plugin_root, target)
+    binary = "unica.exe" if target == "win-x64" else "unica"
+    expected_command = root + ("bin", target, binary)
+    return _components(tokens[0], target) == expected_command
 
 
 def verify_mcp(output_path: Path, plugin_root: str, target: str) -> None:
@@ -183,13 +262,16 @@ def verify_mcp(output_path: Path, plugin_root: str, target: str) -> None:
         )
     if not any(
         _bootstrap_is_packaged(details, plugin_root, target)
+        or _core_binary_is_packaged(details, plugin_root, target)
         for _, _, details in connected
     ):
         raise SystemExit(
-            "unica server is not launched through the packaged bootstrap of "
-            f"the installed plugin root (expected "
+            "unica server is not launched through the packaged bootstrap or "
+            "the packaged core binary of the installed plugin root (expected "
             f"<plugin-root>/bootstrap/bin/{target}/unica-bootstrap run "
-            "--plugin-root <plugin-root>)"
+            "--plugin-root <plugin-root> for a release candidate or "
+            f"<plugin-root>/bin/{target}/unica(.exe) for a local-debug "
+            "candidate)"
         )
 
 
@@ -207,9 +289,16 @@ def main(argv=None) -> None:
     mcp_parser.add_argument("--plugin-root", required=True)
     mcp_parser.add_argument("--target", choices=TARGETS, required=True)
 
+    tools_parser = subparsers.add_parser("verify-agent-tools")
+    tools_parser.add_argument("--agent-json", type=Path, required=True)
+    tools_parser.add_argument("--ledger", type=Path, required=True)
+    tools_parser.add_argument("--server", default="unica")
+
     args = parser.parse_args(argv)
     if args.command == "verify-skills":
         verify_skills(args.json, args.plugin_root, args.target)
+    elif args.command == "verify-agent-tools":
+        verify_agent_tools(args.agent_json, args.ledger, args.server)
     else:
         verify_mcp(args.output, args.plugin_root, args.target)
 

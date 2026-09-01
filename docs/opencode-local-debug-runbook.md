@@ -50,21 +50,87 @@ python scripts/ci/package-unica-opencode.py \
   --out-dir .build/opencode-local-debug/npm
 ```
 
+## Состав кандидата
+
+- Все 73 навыка (`skills/*/SKILL.md`) и общий `references/` включены в `.tgz`
+  целиком и устанавливаются вместе с пакетом — отдельных npm dependencies для
+  навыков и справочников нет.
+- Ядро лежит в `bin/win-x64/unica.exe` и запускается адаптером напрямую по
+  маркеру `opencode/local-debug.json`: bootstrap не используется, runtime не
+  скачивается.
+- Адаптер разрешает чтение только упакованного `references/*`
+  (`CTR.HOST.OPENCODE-REFERENCE-ACCESS`); доступ к остальным внешним каталогам
+  не открывается.
+- Local-debug кандидат — development-сборка: `npm publish` для него запрещён
+  (`scripts/ci/publish-unica-opencode.py` отказывает до первого вызова npm),
+  и никакая команда публикации в этом runbook не используется.
+
 ## Проверка кандидата до установки
 
-- `python -m pytest tests/ci/test_package_unica_opencode.py tests/ci/test_opencode_adapter.py tests/ci/test_publish_unica_opencode.py tests/ci/test_design_documents.py tests/arch -q`;
+- `python -m pytest tests/ci/test_package_unica_opencode.py tests/ci/test_opencode_adapter.py tests/ci/test_smoke_opencode_consumer.py tests/ci/test_publish_unica_opencode.py tests/ci/test_design_documents.py tests/arch -q`;
 - `python scripts/arch/registry.py --check`; `python scripts/arch/immutability.py`;
 - `cargo test --release --locked -p unica-coder --lib tools_list_round_trips -- --nocapture`
-  (ratchet на размер `tools/list`: 204 001 байт, граница 1 285 000);
-- изолированный consumer: `npm install --ignore-scripts <tgz>` в пустом
-  каталоге с изолированными `XDG_*`, `opencode mcp list` → `unica connected`
-  на прямом `bin/win-x64/unica.exe`, `opencode debug skill` → упакованные
-  навыки, e2e-запрос `opencode run` завершается без compaction-событий.
+  (ratchet на размер `tools/list`: 204 001 байт, граница 1 285 000).
+
+## Изолированный consumer: обязательные host-проверки
+
+Consumer живёт в `.build/opencode-local-debug/consumer` (никак не в профиле
+пользователя): `npm init -y` и `npm install --ignore-scripts <абсолютный путь
+к tgz>`. Переменные изолируются по пустым каталогам в
+`.build/opencode-local-debug/environment/`: `OPENCODE_CONFIG_DIR`,
+`XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME`,
+`UNICA_RUNTIME_CACHE_DIR`, `UNICA_PROVIDER_STATE_DIR`. После полного
+Запуска OpenCode собираются headless-артефакты наблюдений (из каталога
+потребителя, без LLM-провайдера и пользовательского prompt):
+
+```sh
+opencode debug skill > skills.json
+opencode mcp list > mcp.txt
+opencode debug agent build --tool skill --params '{"name":"code-search"}' > skill-load.json
+opencode debug agent build --tool read --params '{"filePath":"<plugin-root>/references/platform/platform-mechanics.md"}' > reference-read.json
+```
+
+`<plugin-root>` — абсолютный путь
+`<consumer>/node_modules/@apshendev/unica-opencode`. `skill` и `read` —
+нативные инструменты OpenCode, они работают headless.
+
+MCP-инструменты `unica_*` headless-хост не инициализирует (доказано
+DEBUG-логами на OpenCode 1.18.22 и 1.18.25: `debug agent build` и `serve`
+не поднимают MCP-подключения плагина, `--tool unica_*` даёт
+`Tool not found`). Поэтому поверхность агента и живой вызов MCP-инструмента
+собираются в перезапущенной живой сессии OpenCode с тем же project-конфигом
+(`plugin` с `file://` URI установленного пакета):
+
+- `agent-tools-live.json` — поверхность инструментов живой сессии в форме
+  `{"tools": {"unica_unica_project_map": true, ...}}` (каждый видимый
+  инструмент — ключ со значением `true`);
+- `project-map.json` — JSON-ответ вызова `unica_unica_project_map` из живой
+  сессии.
+
+Артефакты проверяются верификатором репозитория (`--plugin-root` —
+абсолютный путь установленного пакета):
+
+```sh
+python scripts/ci/smoke-opencode-consumer.py verify-skills --json skills.json --plugin-root <plugin-root> --target win-x64
+python scripts/ci/smoke-opencode-consumer.py verify-mcp --output mcp.txt --plugin-root <plugin-root> --target win-x64
+python scripts/ci/smoke-opencode-consumer.py verify-agent-tools --agent-json agent-tools-live.json --ledger arch/tool-surface-review.json --server unica
+```
+
+Обязательные результаты: `opencode debug skill` перечисляет все 73 навыка под
+установленным npm-корнем (встроенный `customize-opencode` проверке не мешает);
+`opencode mcp list` показывает `unica connected` с командой прямого запуска
+`bin/win-x64/unica.exe` — без bootstrap и `cargo run`; `agent-tools-live.json`
+несёт все 71 инструмент `unica_unica_*` из ledger со значением `true`;
+`skill-load.json` — `Loaded skill: code-search` с маршрутизацией через
+`unica.code.search`; `project-map.json` — ответ MCP-инструмента без
+`Tool not found`, permission denial и MCP transport error; `reference-read.json`
+— файл packaged references, прочитанный без запроса external_directory; в
+runtime cache не появляется скачанный release runtime.
 
 ## Идентичность собранной версии 0.12.0
 
-- архив: `apshendev-unica-opencode-0.12.0.tgz`, 109 424 347 байт;
-- SHA-256: `FAC0951285D638C828BD9AE7D37A2B4A04196F8009561D1642F420E957ED1E53`;
+- архив: `apshendev-unica-opencode-0.12.0.tgz`, 109 426 065 байт;
+- SHA-256: `D816AA602BA9EC95D46A174892B8E407818B7BE5FFBBD8FC1DB030AF5293AFB8`;
 - маркер: `mode=local-debug`, `target=win-x64`, `pluginVersion=0.12.0`;
 - ядро `bin/win-x64/unica.exe` — 22 897 152 байта.
 
