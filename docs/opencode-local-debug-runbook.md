@@ -129,8 +129,8 @@ runtime cache не появляется скачанный release runtime.
 
 ## Идентичность собранной версии 0.12.0
 
-- архив: `apshendev-unica-opencode-0.12.0.tgz`, 109 426 065 байт;
-- SHA-256: `D816AA602BA9EC95D46A174892B8E407818B7BE5FFBBD8FC1DB030AF5293AFB8`;
+- архив: `apshendev-unica-opencode-0.12.0.tgz`, 109 426 279 байт;
+- SHA-256: `9af2bd7856cecc215a71930f9c3665faf64fe48f5e75ab15ca2cbe56c86dced4`;
 - маркер: `mode=local-debug`, `target=win-x64`, `pluginVersion=0.12.0`;
 - ядро `bin/win-x64/unica.exe` — 22 897 152 байта.
 
@@ -141,8 +141,8 @@ runtime cache не появляется скачанный release runtime.
 
 ```text
 C:\Users\<user>\.local\share\opencode\packages\unica-opencode\
-  artifacts\apshendev-unica-opencode-0.12.0-win-x64-fac0951285d6.tgz
-  installs\0.12.0-win-x64-fac0951285d6\node_modules\@apshendev\unica-opencode\
+  artifacts\apshendev-unica-opencode-0.12.0-win-x64-9af2bd7856ce.tgz
+  installs\0.12.0-win-x64-9af2bd7856ce\node_modules\@apshendev\unica-opencode\
 ```
 
 Шаги:
@@ -151,26 +151,30 @@ C:\Users\<user>\.local\share\opencode\packages\unica-opencode\
 2. Скопировать `.tgz` из `.build\...\npm` в `artifacts\` с именем
    `<имя>-<версия>-<target>-<первые 12 hex хеша>.tgz`.
 3. В `installs\<версия>-<target>-<12 hex>\` создать `package.json`-заглушку
-   (`{"name":"unica-opencode-permanent","private":true}`) и выполнить
+   (`{"name":"unica-opencode-permanent","private":true}` с зависимостью
+   `file:../../artifacts/<имя архива>`) и выполнить
    `npm install --ignore-scripts <абсолютный путь к tgz>`.
-4. В глобальном `~\.config\opencode\opencode.jsonc` добавить в массив
-   `plugin` абсолютный `file://` URI каталога
-   `node_modules/@apshendev/unica-opencode` из шага 3 (прямыми слешами):
-   ```jsonc
-   "file:///C:/Users/<user>/.local/share/opencode/packages/unica-opencode/installs/0.12.0-win-x64-fac0951285d6/node_modules/@apshendev/unica-opencode"
-   ```
-   Отдельная запись `mcp.unica` не нужна: адаптер сам владеет ею.
+4. Прописать абсолютный `file://` URI каталога
+   `node_modules/@apshendev/unica-opencode` из шага 3 (прямыми слешами) в
+   проектный `opencode.json` репозитория Unica — постоянная установка
+   подключается только для этого проекта, глобальный
+   `~\.config\opencode\opencode.jsonc` не меняется:
+    ```json
+    "file:///C:/Users/<user>/.local/share/opencode/packages/unica-opencode/installs/0.12.0-win-x64-9af2bd7856ce/node_modules/@apshendev/unica-opencode"
+    ```
+    Отдельная запись `mcp.unica` не нужна: адаптер сам владеет ею.
 5. Полностью перезапустить OpenCode и проверить:
    `opencode mcp list` → `unica connected` с командой на постоянный
    `bin/win-x64/unica.exe`; `opencode debug skill` → упакованные навыки;
-   контрольный `opencode run` с вызовом `unica.project.status`.
+   в живой сессии — вызов `unica_unica_project_map`.
 6. Открытые до правки конфига сессии OpenCode перезапустить; временную
-   копию в `.build\opencode-local-debug` удалить.
+   копию в `.build\opencode-local-debug` удалить и повторить проверку
+   `opencode mcp list`, доказав независимость установки от репозитория.
 
 ## Обновление на новую версию
 
 Повторить сборку и проверку, положить новый архив в `artifacts\`, установить
 в новый `installs\<версия>-<target>-<hash12>\`, переключить `file://` URI в
-`opencode.jsonc`, перезапустить OpenCode, проверить, затем удалить старый
-`installs\<...>` и его архив. Одновременное наличие нескольких установок в
-`installs\` позволяет откатиться заменой одной строки конфига.
+проектном `opencode.json`, перезапустить OpenCode, проверить, затем удалить
+старый `installs\<...>` и его архив. Одновременное наличие нескольких
+установок в `installs\` позволяет откатиться заменой одной строки конфига.
