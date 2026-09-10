@@ -499,6 +499,8 @@ cargo test --workspace -- --test-threads=1
 зафиксирован только доказанно существовавший baseline failure, не замаскированный
 новым skip/disable.
 
+> **Выполнено:** 2026-09-10T19:49:44+03:00 — 7.1: `uv lock --check` зелёный, `cargo fmt --all -- --check` зелёный, `git diff --check origin/main...HEAD` чист (дерево без изменений после merge-коммита, Cargo/uv locks не менялись). 7.2: python-наборы зелёные с этапа 6 (test_registry 46+21 subtests, test_product_immutability 36, test_product_contracts 80+57 subtests, test_evaluate_ci_gate 18, test_unica_workflow 55). 7.3: `cargo clippy --workspace --all-targets --all-features -- -D warnings` зелёный (4m20s); `cargo test --workspace --no-fail-fast -- --test-threads=1` — все наборы зелёные, кроме зафиксированных baseline-отказов окружения, не связанных с merge: (а) unica-bootstrap `runtime_install` не запускается на этой машине — эвристика UAC Installer Detection требует elevation для ЛЮБОГО exe с «install» в имени (проверено: тот же бинарник под нейтральным именем — 34 passed/0 failed); (б) два тайминг-чувствительных теста lib (runtime_jobs leader-exit, daemon_router cutoff) — оба зелёные изолированно и в параллельном прогоне, модули байт-идентичны upstream/main; (в) research-цели (`--features research`, вне конвейера, upstream-only) падают на «HOME is not set» — Linux-изм upstream, без `--all-features` не собираются. Параллельный полный прогон: гонка project_health (17 тестов) воспроизводится только при многопоточности, при `--test-threads=1` 153/153 зелёные, код байт-идентичен upstream. manifest_contract 24 passed. Детерминированных регрессий merge не обнаружено.
+
 ### Этап 8. Сценарные проверки в CI без запуска живой 1С
 
 **Редактируемые файлы:** нет, если проверки зелёные.
@@ -533,6 +535,8 @@ cargo test --workspace -- --test-threads=1
 
 **Сценарный критерий:** все обязательные PR checks зелёные на трёх target;
 contract checker исполнил bundle из нового lock; живой runtime 1С не запускался.
+
+> **Выполнено:** 2026-09-10T19:49:44+03:00 — п.1 выполнен локально: `git status` чист; `origin/main..HEAD` — merge-коммит ba69f9e5 + отметки плана 5a6b6710; diffstat 768 файлов (полная дельта upstream), diff workflow 907 строк. Пункты 2–3 (зелёные PR checks на трёх target) отменены решением пользователя «Продолжить без CI»: workflow форка не парсится GitHub (runner.temp в job-level env, унаследовано из PR #5), CI в форке не запускался ни разу — классифицировано отдельным дефектом на этапе 2. П.4 соблюдён: живой runtime 1С не запускался, `unica.runtime.*` и `v8-runner` против `D:\orca\1c_bgu20` не вызывались.
 
 ### Этап 9. Отправить sync-ветку и открыть PR
 
