@@ -234,6 +234,8 @@
    git fetch --prune upstream
    ```
 
+   > **Выполнено:** 2026-09-10T13:37:15+03:00 — оба fetch с prune выполнены, remote-tracking refs обновлены.
+
 2. Зафиксировать идентичность и точку расхождения:
 
    ```powershell
@@ -244,6 +246,8 @@
    git show --no-patch --format=fuller $upstreamSha
    ```
 
+   > **Выполнено:** 2026-09-10T13:37:15+03:00 — зафиксировано: `$forkHead = da5c82f57fe1eff47786684bb34b76b65dc94625`, `$upstreamSha = 70a4402dcdd8221a286fb198f3a93b4d95fc471e` (`70a4402d`, #838 от 2026-09-10), `$mergeBase = a3fd78b5b7294c7cc3a3e62291f4109287a4d23f`; фактический SHA используется вместо наблюдавшегося `c2f9b950`.
+
 3. Проверить состав обеих сторон и общий overlap:
 
    ```powershell
@@ -253,17 +257,23 @@
    git diff --stat origin/main...upstream/main
    ```
 
+   > **Выполнено:** 2026-09-10T13:37:15+03:00 — 567 upstream-коммитов против 31 форк-коммита, cherry-pick-эквивалентов нет (598 строк left-right); upstream: 418 A / 294 M / 51 D файлов, форк: 89 A / 30 M; merge-дельта 763 файла (+253962/−52731); полные логи сохранены во временном каталоге opencode.
+
 4. Просмотреть upstream-версию lock-файла до merge:
 
    ```powershell
    git show upstream/main:plugins/unica/third-party/tools.lock.json
    ```
 
+   > **Выполнено:** 2026-09-10T13:37:15+03:00 — просмотрен: `v8-runner` 0.7.1, repository `IngvarConsulting/v8-runner-rust`, sourceTag `v0.7.1`, sourceCommit `d081dfcd…43c4`, win-x64 sha256 `e10f8829…e43e` — совпадает с ожиданиями 5.1.3.
+
 5. До открытия будущего PR проверить топологию открытых PR форка:
 
    ```powershell
    gh pr list --repo apshendev/unica --state open --json number,headRefName,baseRefName,url
    ```
+
+   > **Выполнено:** 2026-09-10T13:37:15+03:00 — открытых PR в форке нет, будущий sync PR не образует стек.
 
 **Критерии выполнения:** в заметках к PR будут указаны `$forkHead`,
 `$upstreamSha` и `$mergeBase`; `upstream/main` существует локально; фактический
