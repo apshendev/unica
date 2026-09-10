@@ -610,6 +610,17 @@ CI.
 3. Сохранить URL PR и финальный SHA `origin/main` в итоговом отчёте.
 4. Остановиться: не выпускать версию и не переходить к OOM/auth/XML задачам.
 
+> **Выполнено:** 2026-09-10T21:26:14+03:00 — PR #6 (https://github.com/apshendev/unica/pull/6)
+> MERGED merge-стратегией 2026-09-10T18:21:21Z; финальный `origin/main` =
+> `031bf8d40be01851e876429f2ed498a4c04b45f2` (родители: forkHead `3f25e29c` +
+> ветка-совет `1a5d8153`); `--is-ancestor` обоих HEAD'ов (fork и upstream
+> `70a4402d`) подтверждён; рабочее дерево чистое; sync-ветка удалена локально и
+> на origin после `state=MERGED`. Пост-landing верификация: immutability
+> `--base origin/main` зелёный (395 записей, 0 правок — 3 задокументированных
+> артефакта исчезли, как предсказано); `test_product_immutability` 37 passed
+> (включая live-tree тест, ранее deselected). Остановлено: версия не выпускается,
+> OOM/auth/XML задачи не начинались.
+
 ## Итоговые критерии приёмки
 
 - До sync исходный fork HEAD опубликован в `origin/main`; 24 коммита не
