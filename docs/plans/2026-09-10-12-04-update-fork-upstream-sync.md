@@ -324,6 +324,8 @@ upstream SHA используется далее вместо заранее н�
 коммит не переписан; merge-коммит содержит только upstream-дельту и осмысленные
 конфликтные разрешения.
 
+> **Выполнено:** 2026-09-10T17:50:00+03:00 — ветка sync/upstream-70a4402d создана от 3f25e29c; git merge --no-ff --no-commit upstream/main дал 12 конфликтов (workflow, arch/README, carried-rules, index.md, manifest.rs, immutability.py, evaluate-ci-gate.py, package-unica-plugin.py, test_registry, test_evaluate_ci_gate, test_product_contracts, test_unica_workflow); все разрешены по этапу 5, merge-коммит создан ниже по плану с проверкой родителей.
+
 ### Этап 5. Разрешить конфликты по владельцам контрактов
 
 #### 5.1. `v8-runner`, lock и provenance
@@ -404,6 +406,8 @@ upstream SHA используется далее вместо заранее н�
 OpenCode/npm проверки всё ещё имеют единственную реализацию; архитектурный
 реестр не содержит тихо переписанных product-записей.
 
+> **Выполнено:** 2026-09-10T17:50:00+03:00 — 5.1: lock взят upstream побайтово (v8-runner 0.7.1, все SHA сверены), provenance/ATTRIBUTIONS == upstream. 5.2: manifest.rs — upstream validate_engine_asset/V8_RUNNER_RELEASE_ORIGIN + сохранён fork-вывод core-origin (core_release_origin, seam UNICA_BOOTSTRAP_CORE_REPOSITORY). 5.3: workflow — семантический union (fork npm-jobs + upstream p0-release-proof, 17 jobs, строгий YAML-парс без дублей ключей); манифесты 0.12.0/0.12.0, .mcp.json один сервер unica; 9 fork-only npm/OpenCode тестов портированы. 5.4: locks не конфликтовали. 5.5: carried-rules establishes — union 193; политика реестра: принята upstream (DEC.2026-09-10.UPSTREAM-REGISTRY-POLICY; штамп-правило SUPERSESSION-STAMP → superseded; RULE-CLAIMS-TIGHTENED остаётся действующей историей сужений; registry.py/immutability.py/README/test_product_immutability — upstream verbatim); registry --write-index и fate зелёные; immutability: base=upstream/main зелёный, base=origin/main — 3 задокументированных артефакта сжатия истории (файлы побайтово равны upstream-типу, легализованы upstream в #704); OpenCode/npm-контур: 0 изменённых файлов из 352, записи нетронуты.
+
 ### Этап 6. Исправлять только интеграционные регрессии и делать это test-first
 
 **Редактируемые файлы:** только файл падающей проверки, воспроизводящий дефект,
@@ -423,6 +427,8 @@ OpenCode/npm проверки всё ещё имеют единственную 
 
 **Критерии выполнения:** каждое дополнительное изменение имеет доказанную связь
 с merge и красно-зелёную проверку; старые несвязанные дефекты не расширили PR.
+
+> **Выполнено:** 2026-09-10T17:50:00+03:00 — регрессии появления merge устранены test-first: (1) packager: условие v8-runner приведено к upstream-однострочнику, ожидаемому контрактом test_both_sides_of_the_wire; (2) test_bump_version: фикстура дополнена fork-файлом plugins/unica/package.json (bump-version.py:72 и check-version-contract.py:27 — контур форка); (3) check-tool-contracts.py: 3 сайта «binary not found» переведены на as_posix() — Windows-детерминизм сообщений (upstream-дефект, на linux поведение неизменно); (4) test_both_sides: подсчёт литералов origin переписан под объединённый валидатор (2 литерала + format!-вывод core). Итог: test_product_contracts 80 passed + 57 subtests, test_registry 46 passed, test_product_immutability 36 passed (1 deselected — live-tree, зелёный после вливания merge), test_evaluate_ci_gate 18, test_unica_workflow 55.
 
 ### Этап 7. Локальные unit и contract checks
 
