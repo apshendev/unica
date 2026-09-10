@@ -1,9 +1,9 @@
 ---
 id: INV.REGISTRY.PRODUCT-RULE-SUPERSESSION-STAMP
-status: active
+status: superseded
 governs: process
-decision: DEC.2026-08-19.PRODUCT-RECORD-IS-HISTORY
-check: tests/arch/test_product_immutability.py::test_the_rule_supersession_stamp_shape
+decision: DEC.2026-09-10.UPSTREAM-REGISTRY-POLICY
+check: tests/arch/test_product_immutability.py::test_editing_a_product_rule_without_a_new_ground_is_caught
 scope: [docs]
 ---
 

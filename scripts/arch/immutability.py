@@ -9,23 +9,16 @@
 отметка о реализации сюда не относятся: они говорят не о решении, а о мире
 вокруг него, появляются позже самого решения и записываются атомарно.
 
-Инвариант и контракт описывают действующее правило, а правило меняют только
-заменой: старому ставят штамп `status: superseded` со списком преемников в
-`superseded-by`, сами преемники приходят новыми записями под новыми решениями.
-Тело и прочие поля штамп не трогает; перезаземление действующего правила
-запрещено — смена основания без смены обещания и есть тихая подмена.
+Инвариант и контракт описывают действующее правило, а правило со временем
+уточняется. Их править можно — но только вместе с решением, которое этой же
+правкой заводится и объясняет, почему правило меняется. Инвариант, изменившийся
+без нового основания, и есть тихая смена обещания.
 
 Процессная запись под это не подпадает: её и заводят, чтобы перестроить в тот
 день, когда разрабатывать стало неудобно.
 
 Сторона берётся из базы, а не из рабочего дерева: иначе правку продуктового
 правила достаточно было бы прикрыть переводом его в процессные.
-
-Состоянием сравнения служит последнее принятое состояние записи: если коммиты
-диапазона base..HEAD уже дошли до origin/main, их правки — принятая история, и
-страж сверяет живой changeset с её итогом. Локальные коммиты впереди
-origin/main этим доверием не пользуются: их правки обязан поймать страж
-против origin/main.
 
 Usage:
     immutability.py --base origin/main
@@ -37,6 +30,7 @@ from __future__ import annotations
 import argparse
 import ast
 import importlib.util
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -101,62 +95,12 @@ def _git(repo: Path, *args: str) -> str:
     return done.stdout
 
 
-ACCEPTED_TIP = "origin/main"
-
-
-def _accepted_predecessor(repo: Path, path: str, base_ref: str, base_text: str) -> str:
-    """Последнее принятое состояние записи как состояние сравнения.
-
-    Из коммитов диапазона base..HEAD берётся новейший, дошедший до
-    `origin/main`; текст записи в нём и есть принятая история. Коммиты впереди
-    `origin/main` не принимаются: их правки — живой changeset. Когда
-    `origin/main` нет, страж строг и сверяет с самой базой.
-    """
-    probe = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", ACCEPTED_TIP],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-    )
-    if probe.returncode != 0:
-        return base_text
-    log = subprocess.run(
-        ["git", "log", "--format=%H", f"{base_ref}..HEAD", "--", path],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    for commit in log.stdout.split():
-        accepted = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", commit, ACCEPTED_TIP],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-        )
-        if accepted.returncode != 0:
-            continue
-        shown = subprocess.run(
-            ["git", "show", f"{commit}:{path}"],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-        )
-        if shown.returncode == 0:
-            return shown.stdout
-    return base_text
-
-
 def _records_at(repo: Path, ref: str) -> dict[str, str]:
     """Пути и содержимое записей реестра в указанной ревизии."""
     listing = _git(repo, "ls-tree", "-r", "--name-only", ref, "--", ARCH_PREFIX).split()
     found = {}
     for path in listing:
-        if (
-            not path.endswith(".md")
-            or path.endswith("index.md")
-            or path.endswith("README.md")
-        ):
+        if not path.endswith(".md") or path.endswith("index.md") or path.endswith("README.md"):
             continue
         found[path] = _git(repo, "show", f"{ref}:{path}")
     return found
@@ -169,8 +113,197 @@ def _split(text: str) -> tuple[dict, str]:
         return {}, text
 
 
+# Свидетельство можно перенаправить, но только вслед за исчезнувшим адресом.
+# Одно имя, за которым стояла обёртка, вызывавшая настоящие проверки, законно
+# раскрывается в список этих проверок: обещание записи от этого не слабеет, а
+# перестаёт держаться на функции, которая лишь повторяла уже сделанную работу.
+# Опортунистическая подмена рабочего адреса под это не подпадает — старый адрес
+# обязан исчезнуть из дерева.
+EVIDENCE_FIELDS = ("check", "realized")
+_CALL = re.compile(r"^\s*(?:crate::)?(?:[a-z_0-9]+::)*([a-z_0-9]+)\(\s*\)\s*;", re.M)
+
+
+def _declaration_in(text: str, name: str) -> bool:
+    return re.search(rf"\bfn\s+{re.escape(name)}\s*[(<]", text) is not None
+
+
+def _body_at(text: str, name: str) -> str | None:
+    found = re.search(rf"\bfn\s+{re.escape(name)}\s*\(", text)
+    if not found:
+        return None
+    start = text.index("{", found.end())
+    depth = 0
+    for index in range(start, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start + 1 : index]
+    return None
+
+
+def _covered_names(repo: Path, base_ref: str, reference: str, pool: set[str]) -> set[str]:
+    """Проверки, которые старый адрес приводил в исполнение.
+
+    Разворачивается только то, что этой же правкой исчезло из дерева: раз
+    обёртки больше нет, названные ею проверки поднимаются в запись. Всё, что
+    в дереве осталось, — лист, и его запись обязана назвать сама.
+    """
+    path_text, _, name = reference.partition("::")
+    sources: dict[str, str] = {}
+    for candidate in {path_text, *pool}:
+        try:
+            sources[candidate] = _git(repo, "show", f"{base_ref}:{candidate}")
+        except subprocess.CalledProcessError:
+            continue
+    if path_text not in sources:
+        return set()
+
+    def survives(declaration: str) -> bool:
+        for candidate in {path_text, *pool}:
+            current = repo / candidate
+            if current.is_file() and _declaration_in(
+                current.read_text(encoding="utf-8"), declaration
+            ):
+                return True
+        return False
+
+    def host_of(declaration: str) -> str | None:
+        return next(
+            (file for file, text in sources.items() if _body_at(text, declaration) is not None),
+            None,
+        )
+
+    def qualify(host: str | None, declaration: str) -> str:
+        # Адрес сравнивается целиком. Одноимённая функция в другом файле — это
+        # другая проверка, и принимать её за покрытую значит принять подмену.
+        # Файл, которого нет среди путей нового списка, назвать нечем: такая
+        # запись остаётся неквалифицированной и требует отдельного разбора.
+        return f"{host}::{declaration}" if host else f"::{declaration}"
+
+    seen: set[tuple[str, str]] = set()
+    leaves: set[str] = set()
+    pending = [(path_text, name)]
+    while pending:
+        where, what = pending.pop()
+        if (where, what) in seen:
+            continue
+        seen.add((where, what))
+        body = _body_at(sources.get(where, ""), what)
+        calls = _CALL.findall(body) if body is not None else []
+        if not calls:
+            leaves.add(qualify(where, what))
+            continue
+        for called in calls:
+            host = host_of(called)
+            if host is None or survives(called):
+                leaves.add(qualify(host, called))
+            else:
+                pending.append((host, called))
+    return leaves
+
+
+def _is_evidence_repoint(repo: Path, base_ref: str, before: str, after: str) -> bool:
+    """Правка сводится к раскрытию исчезнувшего адреса в его составляющие."""
+    old_props, old_body = _split(before)
+    new_props, new_body = _split(after)
+    if old_body != new_body or set(old_props) != set(new_props):
+        return False
+    changed = {key for key in old_props if old_props[key] != new_props[key]}
+    if not changed or any(key not in EVIDENCE_FIELDS for key in changed):
+        return False
+
+    for key in changed:
+        old_names = _REGISTRY.evidence_names(old_props[key])
+        new_names = _REGISTRY.evidence_names(new_props[key])
+        if len(old_names) != 1 or len(new_names) < 2:
+            return False
+        old_reference = old_names[0]
+        old_path, _, old_declaration = old_reference.partition("::")
+        current = repo / old_path
+        # Исключение открыто ровно для одного случая: имя исчезло, и вместо
+        # него названо то, что оно приводило в исполнение. Уцелевшее имя под
+        # него не подпадает — дописать к нему свидетельство значит расширить
+        # продуктовое обещание, а на это нужно новое решение.
+        if current.is_file() and _declaration_in(
+            current.read_text(encoding="utf-8"), old_declaration
+        ):
+            return False
+        pool = {reference.partition("::")[0] for reference in new_names}
+        covered = _covered_names(repo, base_ref, old_reference, pool)
+        if not covered:
+            return False
+        # Ровно замыкание вызовов исчезнувшего имени, не больше и не меньше.
+        # Лишнее имя — это добавленное свидетельство, и оно идёт обычным путём
+        # через основание; недостающее — молча суженное обещание.
+        unqualified = {name for name in covered if name.startswith("::")}
+        qualified = covered - unqualified
+        remaining = set(new_names) - qualified
+        if len(remaining) != len(unqualified):
+            return False
+        if {name[2:] for name in unqualified} != {
+            reference.partition("::")[2] for reference in remaining
+        }:
+            return False
+    return True
+
+
+def _declares(target: Path, name: str) -> bool:
+    """Объявлено ли имя в этом файле — на любом из двух языков свидетельств."""
+    if not target.is_file():
+        return False
+    source = target.read_text(encoding="utf-8")
+    if target.suffix == ".py":
+        return _python_defines(source, name)
+    return _declaration_in(source, name)
+
+
+def _is_evidence_relocation(repo: Path, before: str, after: str) -> bool:
+    """Правка сводится к переезду свидетельства: имя то же, файл другой.
+
+    Разрез файла не меняет обещания правила — та же функция под тем же именем
+    держит его из соседнего модуля. Исключение узкое и проверяемое: тело и
+    набор пропов совпадают, меняются только адреса свидетельств, каждый адрес
+    сохраняет своё объявление, новый файл его действительно объявляет, а
+    старый — уже нет. Дописать свидетельство или сменить имя так нельзя.
+    """
+    old_props, old_body = _split(before)
+    new_props, new_body = _split(after)
+    if old_body != new_body or set(old_props) != set(new_props):
+        return False
+    changed = {key for key in old_props if old_props[key] != new_props[key]}
+    if not changed or any(key not in EVIDENCE_FIELDS for key in changed):
+        return False
+
+    for key in changed:
+        old_names = _REGISTRY.evidence_names(old_props[key])
+        new_names = _REGISTRY.evidence_names(new_props[key])
+        if len(old_names) != len(new_names):
+            return False
+        for old_reference, new_reference in zip(old_names, new_names):
+            if old_reference == new_reference:
+                continue
+            old_path, _, old_declaration = old_reference.partition("::")
+            new_path, _, new_declaration = new_reference.partition("::")
+            # Имя обязано остаться тем же: смена имени — это другое обещание.
+            if not old_declaration or old_declaration != new_declaration:
+                return False
+            if old_path == new_path:
+                return False
+            # По новому адресу обязан стоять настоящий тест, а не просто
+            # функция с тем же именем: иначе переезд стал бы лазейкой, через
+            # которую правило переезжает на несуществующее доказательство.
+            if not _evidence_resolves(repo, new_reference):
+                return False
+            # Переезд, а не второй дом: по старому адресу объявления больше нет.
+            if _declares(repo / old_path, old_declaration):
+                return False
+    return True
+
+
 def _is_recordable_only(before: str, after: str) -> bool:
-    """Правка решения сводится к простановке отметки и ничему больше."""
+    """Правка сводится к простановке отметки и ничему больше."""
     old_props, old_body = _split(before)
     new_props, new_body = _split(after)
     if old_body != new_body:
@@ -200,36 +333,12 @@ def _is_recordable_only(before: str, after: str) -> bool:
     return False
 
 
-def _is_rule_supersession_stamp(before: str, after: str) -> bool:
-    """Штамп замены правила: смена статуса плюс новый список преемников.
-
-    Тело и все прежние поля побайтово неизменны; набор полей после правки
-    отличается от исходного ровно добавленным `superseded-by`-списком.
-    """
-    old_props, old_body = _split(before)
-    new_props, new_body = _split(after)
-    if old_body != new_body:
-        return False
-    if set(new_props) != set(old_props) | {"superseded-by"}:
-        return False
-    if any(key != "status" and old_props[key] != new_props[key] for key in old_props):
-        return False
-    successor_list = new_props.get("superseded-by")
-    return (
-        old_props.get("status") == "active"
-        and new_props.get("status") == "superseded"
-        and not old_props.get("superseded-by")
-        and isinstance(successor_list, list)
-        and bool(successor_list)
-    )
-
-
-def _records_introduced(
-    repo: Path, base: dict[str, str]
-) -> dict[str, IntroducedRecord]:
+def _records_introduced(repo: Path, base: dict[str, str]) -> dict[str, IntroducedRecord]:
     """Новые записи вместе с видом и props, нужными для проверки основания."""
     known = {
-        props["id"] for text in base.values() if (props := _split(text)[0]).get("id")
+        props["id"]
+        for text in base.values()
+        if (props := _split(text)[0]).get("id")
     }
     introduced: dict[str, IntroducedRecord] = {}
     for directory, kind in (
@@ -347,6 +456,20 @@ def _evidence_dependency_error(evidence: object) -> str | None:
     return None
 
 
+def _decision_declaring_change(
+    introduced: dict[str, "IntroducedRecord"], rule_id: object
+) -> "IntroducedRecord | None":
+    """The decision introduced here that names this rule in `changes`."""
+    if not rule_id:
+        return None
+    for record in introduced.values():
+        if record.kind != "decision":
+            continue
+        if str(rule_id) in _list_property(record.props.get("changes")):
+            return record
+    return None
+
+
 def _ground_error(repo: Path, ground: IntroducedRecord) -> str | None:
     """A new product-rule ground must be an implemented product decision."""
     if ground.kind != "decision":
@@ -354,9 +477,7 @@ def _ground_error(repo: Path, ground: IntroducedRecord) -> str | None:
     if ground.props.get("status") != "active":
         return f"решение {ground.path} имеет status {ground.props.get('status')!r}, не active"
     if ground.props.get("governs") != "product":
-        return (
-            f"решение {ground.path} governs {ground.props.get('governs')!r}, не product"
-        )
+        return f"решение {ground.path} governs {ground.props.get('governs')!r}, не product"
     evidence = ground.props.get("realized")
     if not evidence:
         return f"решение {ground.path} не имеет realized evidence"
@@ -370,11 +491,7 @@ def _ground_error(repo: Path, ground: IntroducedRecord) -> str | None:
 def _list_property(value: object) -> tuple[str, ...]:
     if isinstance(value, list):
         return tuple(str(item) for item in value)
-    if (
-        not isinstance(value, str)
-        or not value.startswith("[")
-        or not value.endswith("]")
-    ):
+    if not isinstance(value, str) or not value.startswith("[") or not value.endswith("]"):
         return ()
     return tuple(item.strip() for item in value[1:-1].split(",") if item.strip())
 
@@ -387,7 +504,9 @@ def _surface_change_has_product_ground(
     for identifier, decision in introduced.items():
         if decision.kind != "decision" or _ground_error(repo, decision) is not None:
             continue
-        if "CTR.WIRE.TOOL-SURFACE" not in _list_property(decision.props.get("changes")):
+        if "CTR.WIRE.TOOL-SURFACE" not in _list_property(
+            decision.props.get("changes")
+        ):
             continue
         for established in _list_property(decision.props.get("establishes")):
             rule = introduced.get(established)
@@ -424,23 +543,42 @@ def inspect(repo: Path, base_ref: str) -> Verdict:
         after = current.read_text(encoding="utf-8")
         if after == before:
             continue
-        comparison = _accepted_predecessor(repo, path, base_ref, before)
-        if after == comparison:
-            continue
 
         if path.startswith("arch/decisions/"):
-            if not _is_recordable_only(comparison, after):
-                offenders.append(
-                    f"{path}: продуктовое решение отредактировано, а не заменено"
-                )
+            if (
+                not _is_recordable_only(before, after)
+                and not _is_evidence_repoint(repo, base_ref, before, after)
+                and not _is_evidence_relocation(repo, before, after)
+            ):
+                offenders.append(f"{path}: продуктовое решение отредактировано, а не заменено")
             continue
 
-        # Инвариант и контракт меняются только штампом замены: смена статуса на
-        # superseded плюс добавленный список преемников, без правки тела и
-        # остальных полей. Механизм нового основания живёт только для
-        # surface-изменений `arch/tool-surface.md`.
-        if not _is_rule_supersession_stamp(comparison, after):
-            offenders.append(f"{path}: продуктовое правило изменено без штампа замены")
+        # Инвариант и контракт: правка законна, если этой же правкой заведено
+        # решение, на которое запись теперь и ссылается. Существующее основание
+        # не годится — оно писалось раньше и этой перемены не предвидело.
+        if _is_evidence_repoint(repo, base_ref, before, after):
+            continue
+
+        if _is_evidence_relocation(repo, before, after):
+            continue
+
+        # Либо правило переадресовано на заведённое здесь же решение, либо
+        # такое решение прямо назвало его в `changes`. Второй путь нужен там,
+        # где основание правила шире правки: инвариант о составе поставки
+        # стоит на решении о переходе, а имя инструмента в нём меняет решение
+        # об этом инструменте. Без него правка была бы либо запрещена, либо
+        # оплачена ложной переадресацией основания.
+        rule_id = _split(after)[0].get("id")
+        declared_by = _decision_declaring_change(introduced, rule_id)
+        ground = _split(after)[0].get("decision")
+        introduced_ground = introduced.get(ground) or declared_by
+        if introduced_ground is None:
+            offenders.append(
+                f"{path}: продуктовое правило изменено без нового решения о причине"
+            )
+            continue
+        if error := _ground_error(repo, introduced_ground):
+            offenders.append(f"{path}: продуктовое правило изменено, но {error}")
 
     surface_path = "arch/tool-surface.md"
     before_surface = base.get(surface_path)
