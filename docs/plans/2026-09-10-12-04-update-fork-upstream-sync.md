@@ -582,6 +582,17 @@ contract checker исполнил bundle из нового lock; живой runt
 поверх чужой PR-ветки, содержит проверяемый upstream merge и полностью зелёный
 CI.
 
+> **Выполнено:** 2026-09-10T20:19:31+03:00 — preflight и push выполнены
+> (ddbf026f); PR открыт: https://github.com/apshendev/unica/pull/6 (база
+> `apshendev/unica:main`, head `sync/upstream-70a4402d`, открытие потребовало
+> явного `--repo apshendev/unica`: default-репозиторий `gh` — upstream).
+> Описание содержит все требуемые пункты, включая SHA-и, CI-уступку и «live 1C
+> smoke not run by decision». П. 4 (`gh pr checks --watch`) пропущен по решению
+> владельца: workflow форка не парсится GitHub (`runner.temp` в job-level env,
+> PR #5), CI в форке не запускался ни разу — критерий «полностью зелёный CI»
+> недостижим и заменён локальными проверками этапа 7. П. 5 (merge) ждёт явного
+> решения владельца; автовливание не включено.
+
 ### Этап 10. Проверить состояние после merge PR
 
 **Редактируемые файлы:** нет.
