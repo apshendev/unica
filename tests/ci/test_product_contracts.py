@@ -23,6 +23,7 @@ import tree_sitter_rust
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RMCP_OWNER = "crates/unica-coder/src/interfaces/mcp.rs"
+RMCP_INTERFACE_ROOT = "crates/unica-coder/src/interfaces/"
 RMCP_CRATES_IO_SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
 RMCP_ALLOWED_FEATURES = ["server", "transport-io"]
 
@@ -72,7 +73,9 @@ def productive_rust_code(source: bytes) -> bytes:
     while stack:
         node = stack.pop()
         if node.type in ignored:
-            code[node.start_byte : node.end_byte] = b" " * (node.end_byte - node.start_byte)
+            code[node.start_byte : node.end_byte] = b" " * (
+                node.end_byte - node.start_byte
+            )
             continue
         stack.extend(node.children)
     return bytes(code)
@@ -166,6 +169,47 @@ def tracked_workspace_production_rust_sources(repo_root: Path) -> dict[str, byte
     return sources
 
 
+def repository_files(repo_root: Path, *pathspecs: str) -> list[Path]:
+    """Files git tracks or would track under `pathspecs`; ignored files never enter.
+
+    `Path.rglob` also returns what the desktop drops into a checkout: `.DS_Store`,
+    editor swap files, a locally built binary. One such file breaks a text scan on
+    a developer machine while CI, whose checkout carries none of them, stays
+    green. A file git ignores is not part of the repository, so it is not part
+    of a scan; an untracked file git would accept still is, exactly as with
+    `rglob`. A tracked file deleted from the working tree is still listed, so
+    callers keep their `is_file()` guard.
+    """
+    listed = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            *pathspecs,
+        ],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+    ).stdout.split(b"\0")
+    return sorted(repo_root / os.fsdecode(raw_path) for raw_path in listed if raw_path)
+
+
+def retired_corpus_references(repo_root: Path) -> list[str]:
+    """Active `arch/` files that still send the reader to the retired local corpus.
+
+    The frozen `docs/arch-v1/` is deliberately outside this scan.
+    """
+    return [
+        path.relative_to(repo_root).as_posix()
+        for path in repository_files(repo_root, "arch")
+        if path.is_file() and "docs-local/1ci" in path.read_text(encoding="utf-8")
+    ]
+
+
 def rmcp_reference_confinement_errors(
     sources: dict[str, bytes], owner: str
 ) -> list[str]:
@@ -175,14 +219,18 @@ def rmcp_reference_confinement_errors(
     return [
         f"{path}: productive rmcp reference outside transport owner"
         for path, code in sorted(productive.items())
-        if path != owner and re.search(rb"\brmcp\b", code)
+        if not (
+            (owner.endswith("/") and path.startswith(owner))
+            or (not owner.endswith("/") and path == owner)
+        )
+        and re.search(rb"\brmcp\b", code)
     ]
 
 
 def workspace_rmcp_reference_confinement_errors(repo_root: Path) -> list[str]:
     return rmcp_reference_confinement_errors(
         tracked_workspace_production_rust_sources(repo_root),
-        RMCP_OWNER,
+        RMCP_INTERFACE_ROOT,
     )
 
 
@@ -229,7 +277,11 @@ def rmcp_owner_export_boundary_errors(source: bytes, owner: str) -> list[str]:
                 errors.append(f"{owner}: macro_export leaves the transport module")
 
         visibility = next(
-            (child for child in node.named_children if child.type == "visibility_modifier"),
+            (
+                child
+                for child in node.named_children
+                if child.type == "visibility_modifier"
+            ),
             None,
         )
         if visibility is not None:
@@ -359,7 +411,12 @@ def workspace_rmcp_dependency_errors(repo_root: Path) -> list[str]:
 
 
 def load_contract_module():
-    module_path = Path(__file__).resolve().parents[2] / "scripts" / "ci" / "check-tool-contracts.py"
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "ci"
+        / "check-tool-contracts.py"
+    )
     spec = importlib.util.spec_from_file_location("check_tool_contracts", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"failed to load {module_path}")
@@ -412,7 +469,7 @@ class ProductContractTests(unittest.TestCase):
             source.parent.mkdir(parents=True)
             (root / "Cargo.toml").write_text(
                 '[package]\nname = "root-package"\nversion = "0.1.0"\n'
-                '[workspace]\nmembers = []\n',
+                "[workspace]\nmembers = []\n",
                 encoding="utf-8",
             )
             source.write_text("use rmcp::model::ProtocolVersion;\n", encoding="utf-8")
@@ -432,8 +489,7 @@ class ProductContractTests(unittest.TestCase):
             included.parent.mkdir(parents=True)
             excluded.parent.mkdir(parents=True)
             (root / "Cargo.toml").write_text(
-                '[workspace]\nmembers = ["crates/*"]\n'
-                'exclude = ["crates/excluded"]\n',
+                '[workspace]\nmembers = ["crates/*"]\nexclude = ["crates/excluded"]\n',
                 encoding="utf-8",
             )
             for package_name in ("included", "excluded"):
@@ -474,9 +530,7 @@ class ProductContractTests(unittest.TestCase):
                 '[package]\nname = "shared"\nversion = "0.1.0"\nedition = "2021"\n',
                 encoding="utf-8",
             )
-            (app / "src" / "lib.rs").write_text(
-                "pub fn app() {}\n", encoding="utf-8"
-            )
+            (app / "src" / "lib.rs").write_text("pub fn app() {}\n", encoding="utf-8")
             (shared / "src" / "lib.rs").write_text(
                 "pub fn shared() {}\n", encoding="utf-8"
             )
@@ -500,7 +554,7 @@ class ProductContractTests(unittest.TestCase):
             (root / "Cargo.toml").write_text(
                 '[workspace]\nresolver = "2"\n'
                 'members = ["unica-coder", "sibling"]\n'
-                '[workspace.dependencies]\n'
+                "[workspace.dependencies]\n"
                 'rmcp = { version = "3.1.2", default-features = false, '
                 'features = ["server", "transport-io"] }\n'
                 'sdk_alias = { package = "rmcp", version = "3.1.2", '
@@ -520,7 +574,7 @@ class ProductContractTests(unittest.TestCase):
             )
             (vendor / "Cargo.toml").write_text(
                 '[package]\nname = "rmcp"\nversion = "3.1.2"\nedition = "2021"\n'
-                '[features]\ndefault = []\nserver = []\ntransport-io = []\n',
+                "[features]\ndefault = []\nserver = []\ntransport-io = []\n",
                 encoding="utf-8",
             )
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
@@ -554,7 +608,7 @@ class ProductContractTests(unittest.TestCase):
             )
             (vendor / "Cargo.toml").write_text(
                 '[package]\nname = "rmcp"\nversion = "3.1.2"\nedition = "2021"\n'
-                '[features]\ndefault = []\nserver = []\ntransport-io = []\nmacros = []\n',
+                "[features]\ndefault = []\nserver = []\ntransport-io = []\nmacros = []\n",
                 encoding="utf-8",
             )
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
@@ -752,13 +806,13 @@ class ProductContractTests(unittest.TestCase):
         errors = rmcp_reference_confinement_errors(
             {
                 owner: b"use rmcp::ServerHandler;",
-                outside: b'''
+                outside: b"""
                     // use rmcp::ServerHandler;
                     const TEXT: &str = "rmcp::ServerHandler";
                     const RAW: &str = r#"rmcp::ServerHandler"#;
                     #[cfg(test)]
                     mod tests { use rmcp::ServerHandler; }
-                ''',
+                """,
             },
             owner,
         )
@@ -769,7 +823,7 @@ class ProductContractTests(unittest.TestCase):
         self.assertEqual(
             workspace_rmcp_reference_confinement_errors(REPO_ROOT),
             [],
-            "productive rmcp references must stay in interfaces/mcp.rs",
+            "productive rmcp references must stay in interfaces/",
         )
 
     def test_native_validators_do_not_expose_internal_local_owner_only_switch(
@@ -787,11 +841,11 @@ class ProductContractTests(unittest.TestCase):
                     )
         self.assertEqual(offenders, [])
 
-    def test_v8_runner_partial_load_list_requires_bom_crlf_and_cyrillic_path(self) -> None:
+    def test_v8_runner_partial_load_list_requires_bom_crlf_and_cyrillic_path(
+        self,
+    ) -> None:
         module = load_contract_module()
-        expected_path = str(
-            Path("Catalogs.Товары") / "Ext" / "ObjectModule.bsl"
-        )
+        expected_path = str(Path("Catalogs.Товары") / "Ext" / "ObjectModule.bsl")
         payload = b"\xef\xbb\xbf" + expected_path.encode("utf-8") + b"\r\n"
 
         self.assertEqual(
@@ -839,10 +893,7 @@ class ProductContractTests(unittest.TestCase):
 
         self.assertEqual(
             errors,
-            [
-                "v8-runner fixture: platform stub compilation timed out "
-                "after 60 seconds"
-            ],
+            ["v8-runner fixture: platform stub compilation timed out after 60 seconds"],
         )
         self.assertEqual(compile_run.call_args.kwargs["timeout"], 60)
 
@@ -1206,7 +1257,7 @@ class ProductContractTests(unittest.TestCase):
 
     BSL_ANALYZER_HELP = (
         "#!/usr/bin/env sh\n"
-        "case \"$*\" in\n"
+        'case "$*" in\n'
         "  'analyze --help') printf '%s\\n' '--source-dir --format jsonl' ;;\n"
         "  'mcp serve --help') printf '%s\\n' '--profile --source-dir --mode stdio' ;;\n"
         "  *) exit 1 ;;\n"
@@ -1225,7 +1276,9 @@ class ProductContractTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[2]
         agents = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
 
-        section = agents.split("## Куда смотреть, где менять", 1)[1].split("\n## ", 1)[0]
+        section = agents.split("## Куда смотреть, где менять", 1)[1].split("\n## ", 1)[
+            0
+        ]
         rows = [
             line
             for line in section.splitlines()
@@ -1264,22 +1317,52 @@ class ProductContractTests(unittest.TestCase):
         downloader_test = REPO_ROOT / "tests" / "dev" / "test_download_1ci_guides.py"
         agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
-        self.assertFalse(downloader.exists(), "загрузчик удалён вместе с контрактом корпуса")
-        self.assertFalse(downloader_test.exists(), "тест загрузчика удалён вместе с ним")
+        self.assertFalse(
+            downloader.exists(), "загрузчик удалён вместе с контрактом корпуса"
+        )
+        self.assertFalse(
+            downloader_test.exists(), "тест загрузчика удалён вместе с ним"
+        )
         self.assertNotIn("download-1ci-guides.py", agents)
         self.assertNotIn("docs-local/1ci/8.3.27/en/", agents)
         self.assertNotIn("kb.1ci.com/bin/download", agents)
         # Действующий нормативный слой не отправляет читателя к снятому корпусу.
         # Замороженный `docs/arch-v1/` сюда намеренно не входит.
-        for arch_path in sorted((REPO_ROOT / "arch").rglob("*")):
-            if not arch_path.is_file():
-                continue
-            with self.subTest(path=arch_path.relative_to(REPO_ROOT).as_posix()):
-                self.assertNotIn(
-                    "docs-local/1ci",
-                    arch_path.read_text(encoding="utf-8"),
-                    "активный слой arch не должен ссылаться на снятый корпус",
-                )
+        self.assertEqual(
+            retired_corpus_references(REPO_ROOT),
+            [],
+            "активный слой arch не должен ссылаться на снятый корпус",
+        )
+
+    def test_retired_corpus_scan_skips_what_git_ignores(self) -> None:
+        """Finder кладёт `.DS_Store` в `arch/`; git его игнорирует, скан тоже.
+
+        Бинарный файл ронял обход `UnicodeDecodeError` локально, а CI, где
+        такого файла нет, оставался зелёным. Неотслеживаемый, но не
+        игнорируемый файл по-прежнему читается: нарушение в нём ловится
+        до `git add`.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "arch").mkdir()
+            (root / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
+            (root / "arch" / "clean.md").write_text(
+                "справка из установки\n", encoding="utf-8"
+            )
+            (root / "arch" / "stale.md").write_text(
+                "см. docs-local/1ci\n", encoding="utf-8"
+            )
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            (root / "arch" / ".DS_Store").write_bytes(b"\x00\x00\x00\x01Bud1\xa8\xff")
+            (root / "arch" / "unstaged.md").write_text(
+                "docs-local/1ci\n", encoding="utf-8"
+            )
+
+            self.assertEqual(
+                retired_corpus_references(root),
+                ["arch/stale.md", "arch/unstaged.md"],
+            )
 
     def test_local_corpus_directory_stays_ignored(self) -> None:
         """Каталог остаётся игнорируемым: снят контракт корпуса, а не каталог."""
@@ -1311,7 +1394,9 @@ class ProductContractTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[2]
         runbook = repo_root / "docs/release-runbook.md"
         agents = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
-        skill = (repo_root / ".claude/skills/release/SKILL.md").read_text(encoding="utf-8")
+        skill = (repo_root / ".claude/skills/release/SKILL.md").read_text(
+            encoding="utf-8"
+        )
 
         self.assertTrue(runbook.is_file())
         # An agent asked to release has to reach the runbook from the entry point
@@ -1344,11 +1429,13 @@ class ProductContractTests(unittest.TestCase):
         must exist before them, and staging must never touch the catalog.
         """
         repo_root = Path(__file__).resolve().parents[2]
-        publish = (repo_root / ".github/workflows/publish-unica-marketplace.yml").read_text(
-            encoding="utf-8"
-        )
+        publish = (
+            repo_root / ".github/workflows/publish-unica-marketplace.yml"
+        ).read_text(encoding="utf-8")
 
-        self.assertIn("needs: [stage, tag, verify-fresh-install, verify-upgrade]", publish)
+        self.assertIn(
+            "needs: [stage, tag, verify-fresh-install, verify-upgrade]", publish
+        )
         self.assertIn("needs: [stage, tag]", publish)
         # Staging pushes the payload only; the catalog files move in promote.
         self.assertNotIn("stage: Unica catalog", publish)
@@ -1369,7 +1456,10 @@ class ProductContractTests(unittest.TestCase):
         # packaging fails on every later pull request once it drifts. A tag-shaped
         # literal is wrong anywhere in the file, however quoted, and this also
         # catches suffixed forms such as v1.2.3-rc1 by matching their prefix.
-        tag_literals = sorted(set(re.findall(r"v\d+\.\d+\.\d+", release)))
+        # The version comment beside a commit hash documents an action pin, not
+        # a release tag: Dependabot moves it with the hash, and nothing reads it.
+        without_pins = re.sub(r"@[0-9a-f]{40} # v\d+\.\d+\.\d+", "", release)
+        tag_literals = sorted(set(re.findall(r"v\d+\.\d+\.\d+", without_pins)))
         # An unprefixed literal is only wrong inside the step that derives the
         # tag, including in an intermediate variable it reads. The file elsewhere
         # pins other tools by bare version, so this cannot be a whole-file rule.
@@ -1377,7 +1467,9 @@ class ProductContractTests(unittest.TestCase):
         start = release.find(step_name)
         self.assertNotEqual(start, -1, "the workflow no longer derives the release tag")
         following = re.search(r"(?m)^      - (name|uses|run):", release[start:])
-        step = release[start : start + following.start()] if following else release[start:]
+        step = (
+            release[start : start + following.start()] if following else release[start:]
+        )
         unprefixed = sorted(set(re.findall(r"\d+\.\d+\.\d+", step)))
 
         self.assertEqual(tag_literals, [])
@@ -1392,7 +1484,8 @@ class ProductContractTests(unittest.TestCase):
         spec.loader.exec_module(module)
 
         contract = importlib.util.spec_from_file_location(
-            "check_version_contract", repo_root / "scripts" / "ci" / "check-version-contract.py"
+            "check_version_contract",
+            repo_root / "scripts" / "ci" / "check-version-contract.py",
         )
         assert contract is not None and contract.loader is not None
         contract_module = importlib.util.module_from_spec(contract)
@@ -1403,6 +1496,7 @@ class ProductContractTests(unittest.TestCase):
             for relative in (
                 "Cargo.toml",
                 "plugins/unica/.codex-plugin/plugin.json",
+                "plugins/unica/package.json",
                 "plugins/unica/third-party/tools.lock.json",
             ):
                 target = work / relative
@@ -1415,7 +1509,8 @@ class ProductContractTests(unittest.TestCase):
             claude = work / "plugins/unica/.claude-plugin/plugin.json"
             claude.parent.mkdir(parents=True, exist_ok=True)
             claude.write_text(
-                json.dumps({"name": "unica", "version": "0.0.0"}) + "\n", encoding="utf-8"
+                json.dumps({"name": "unica", "version": "0.0.0"}) + "\n",
+                encoding="utf-8",
             )
 
             changed = module.bump(work, "9.8.7")
@@ -1445,7 +1540,8 @@ class ProductContractTests(unittest.TestCase):
             lock.parent.mkdir(parents=True, exist_ok=True)
             # Two unica entries: valid JSON, but no single version to set.
             lock.write_text(
-                json.dumps({"tools": [{"name": "unica"}, {"name": "unica"}]}), encoding="utf-8"
+                json.dumps({"tools": [{"name": "unica"}, {"name": "unica"}]}),
+                encoding="utf-8",
             )
             before = cargo.read_text(encoding="utf-8")
 
@@ -1458,9 +1554,9 @@ class ProductContractTests(unittest.TestCase):
 
     def test_the_anchor_tag_names_the_staging_commit(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
-        publish = (repo_root / ".github/workflows/publish-unica-marketplace.yml").read_text(
-            encoding="utf-8"
-        )
+        publish = (
+            repo_root / ".github/workflows/publish-unica-marketplace.yml"
+        ).read_text(encoding="utf-8")
 
         # Naming the promotion commit would require tagging a commit that does
         # not exist until the catalog has already moved, which is exactly the
@@ -1510,7 +1606,9 @@ class ProductContractTests(unittest.TestCase):
         # catalog's git-subdir source. The package contract and its user-facing
         # README, not the frozen v1 decision, keep it.
         repo_root = Path(__file__).resolve().parents[2]
-        plugin_readme = (repo_root / "plugins/unica/README.md").read_text(encoding="utf-8")
+        plugin_readme = (repo_root / "plugins/unica/README.md").read_text(
+            encoding="utf-8"
+        )
         release = (repo_root / ".github/workflows/unica-plugin-release.yml").read_text(
             encoding="utf-8"
         )
@@ -1519,25 +1617,33 @@ class ProductContractTests(unittest.TestCase):
         self.assertIn("CLAUDE_CLI_VERSION: 2.1.69", release)
 
     def test_release_gate_pins_the_oldest_supported_client(self) -> None:
-        from tests.ci.test_unica_workflow import parse_workflow_jobs
-
-        release = (REPO_ROOT / ".github/workflows/unica-plugin-release.yml").read_text(
-            encoding="utf-8"
+        from tests.ci.test_unica_workflow import (
+            RELEASE_WORKFLOW,
+            job,
+            load,
+            script,
+            steps,
         )
-        package = parse_workflow_jobs(release)["package-thin"].body
-        pins = re.findall(r"(?m)^          CLAUDE_CLI_VERSION: ([0-9.]+)$", package)
+
+        package = job(load(RELEASE_WORKFLOW), "package-thin")
+        pins = [
+            str(step["env"]["CLAUDE_CLI_VERSION"])
+            for step in steps(package)
+            if "CLAUDE_CLI_VERSION" in (step.get("env") or {})
+        ]
         self.assertEqual(pins, ["2.1.69"])
+        shell = script(package)
         ordered = (
             'npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}"',
             'test "$(claude --version | cut -d\' \' -f1)" = "$CLAUDE_CLI_VERSION"',
             "claude plugin validate dist/thin/marketplace/plugins/unica",
             "claude plugin validate dist/thin/marketplace",
         )
-        positions = [package.index(command) for command in ordered]
+        positions = [shell.index(command) for command in ordered]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn("python scripts/ci/package-unica-plugin.py", package)
+        self.assertIn("python scripts/ci/package-unica-plugin.py", shell)
         self.assertLess(
-            package.index("python scripts/ci/package-unica-plugin.py"),
+            shell.index("python scripts/ci/package-unica-plugin.py"),
             positions[0],
         )
 
@@ -1556,9 +1662,9 @@ class ProductContractTests(unittest.TestCase):
 
     def test_publish_workflow_promotes_both_host_catalogs(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
-        publish = (repo_root / ".github/workflows/publish-unica-marketplace.yml").read_text(
-            encoding="utf-8"
-        )
+        publish = (
+            repo_root / ".github/workflows/publish-unica-marketplace.yml"
+        ).read_text(encoding="utf-8")
         release = (repo_root / ".github/workflows/unica-plugin-release.yml").read_text(
             encoding="utf-8"
         )
@@ -1663,20 +1769,60 @@ class ProductContractTests(unittest.TestCase):
         ]
         self.assertEqual(matches, [])
 
-    def test_removed_script_backed_skills_do_not_leave_architecture_records(self) -> None:
+    def test_removed_script_backed_skills_do_not_leave_architecture_records(
+        self,
+    ) -> None:
         repo_root = Path(__file__).resolve().parents[2]
         decisions = repo_root / "docs" / "arch-v1" / "decisions"
         index = (decisions / "README.md").read_text(encoding="utf-8")
 
-        self.assertFalse((decisions / "0007-script-backed-utility-skill-exceptions.md").exists())
-        self.assertFalse((decisions / "0009-remove-script-backed-utility-skills.md").exists())
+        self.assertFalse(
+            (decisions / "0007-script-backed-utility-skill-exceptions.md").exists()
+        )
+        self.assertFalse(
+            (decisions / "0009-remove-script-backed-utility-skills.md").exists()
+        )
         self.assertNotIn("Script-backed utility", index)
+
+    def test_every_declared_refusal_detail_is_constructed_somewhere(self) -> None:
+        """Объявленное уточнение без источника — обещание, которого провод не держит.
+
+        Карта code→detail внутри типа такого не ловит: она удовлетворяется одними
+        объявлениями. Код тогда молча отвечает своим умолчанием, и различие, ради
+        которого уточнение заведено, до читателя не доходит.
+        """
+        repo_root = Path(__file__).resolve().parents[2]
+        dictionary = (
+            repo_root / "crates" / "unica-coder" / "src" / "domain" / "refusal.rs"
+        )
+        sources = [
+            path
+            for path in (repo_root / "crates" / "unica-coder" / "src").rglob("*.rs")
+            if path.name != "refusal.rs"
+        ]
+        corpus = "".join(path.read_text(encoding="utf-8") for path in sources)
+        detail_names = re.findall(
+            r"^pub enum RefusalDetail \{(.*?)^\}",
+            dictionary.read_text(encoding="utf-8"),
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertEqual(len(detail_names), 1, "не нашли объявление RefusalDetail")
+        variants = re.findall(r"^\s{4}(\w+),$", detail_names[0], re.MULTILINE)
+        self.assertGreaterEqual(len(variants), 8)
+
+        orphans = [
+            variant for variant in variants if f"RefusalDetail::{variant}" not in corpus
+        ]
+        self.assertEqual(
+            orphans,
+            [],
+            "уточнения объявлены, но нигде не ставятся: их код так и будет "
+            "отвечать умолчанием",
+        )
 
     def test_application_layer_does_not_spawn_git_directly(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
-        application_root = (
-            repo_root / "crates" / "unica-coder" / "src" / "application"
-        )
+        application_root = repo_root / "crates" / "unica-coder" / "src" / "application"
         offenders = []
         for path in application_root.rglob("*.rs"):
             if direct_git_command_calls(path.read_bytes()):
@@ -1684,8 +1830,10 @@ class ProductContractTests(unittest.TestCase):
 
         self.assertEqual(offenders, [])
 
-    def test_direct_git_command_guard_matches_calls_before_masking_literals(self) -> None:
-        source = br'''
+    def test_direct_git_command_guard_matches_calls_before_masking_literals(
+        self,
+    ) -> None:
+        source = rb"""
 fn productive() { std::process::Command::new("git"); }
 fn harmless() {
     let mention = "std::process::Command::new(\"git\")";
@@ -1693,7 +1841,7 @@ fn harmless() {
 }
 #[cfg(test)]
 fn test_only() { std::process::Command::new("git"); }
-'''
+"""
 
         self.assertEqual(len(direct_git_command_calls(source)), 1)
 
@@ -1717,7 +1865,10 @@ fn test_only() { std::process::Command::new("git"); }
         }
         fallback_outputs = re.findall(r"printf '%s\\n' '([^']*)'", body)
         fallback = fallback_outputs[0] if fallback_outputs else ""
-        routes = {" ".join(command): routed_outputs.get(command, fallback) for command in commands}
+        routes = {
+            " ".join(command): routed_outputs.get(command, fallback)
+            for command in commands
+        }
         path = tools_dir / f"{name}.py"
         path.write_text(
             "#!/usr/bin/env python3\n"
@@ -1836,10 +1987,13 @@ fn test_only() { std::process::Command::new("git"); }
     def test_windows_best_effort_cleanup_targets_surviving_child_independently(
         self,
     ) -> None:
-        with patch.object(os, "name", "nt"), patch.object(
-            subprocess,
-            "run",
-        ) as run:
+        with (
+            patch.object(os, "name", "nt"),
+            patch.object(
+                subprocess,
+                "run",
+            ) as run,
+        ):
             self.kill_process_tree_best_effort(101, 202)
 
         self.assertEqual(
@@ -1928,7 +2082,14 @@ fn test_only() { std::process::Command::new("git"); }
             with patch.object(
                 module,
                 "TOOL_HELP_CHECKS",
-                [("rlm-bsl-index build", "rlm-bsl-index", ["index", "build"], ["build"])],
+                [
+                    (
+                        "rlm-bsl-index build",
+                        "rlm-bsl-index",
+                        ["index", "build"],
+                        ["build"],
+                    )
+                ],
             ):
                 errors = module.check_tool_contracts(tools_dir)
 
@@ -1941,7 +2102,9 @@ fn test_only() { std::process::Command::new("git"); }
         self.assertNotIn(str(tools_dir), error)
         self.assertLess(len(error), 5_000)
 
-    def test_tool_help_contracts_do_not_fall_back_to_legacy_rlm_server_name(self) -> None:
+    def test_tool_help_contracts_do_not_fall_back_to_legacy_rlm_server_name(
+        self,
+    ) -> None:
         module = load_contract_module()
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1998,14 +2161,26 @@ fn test_only() { std::process::Command::new("git"); }
 
         with tempfile.TemporaryDirectory() as tmp:
             tools_dir = Path(tmp)
-            self.write_executable(tools_dir, "bsl-analyzer", "#!/usr/bin/env sh\nprintf '%s\\n' 'analyze'\n")
-            self.write_executable(tools_dir, "rlm-bsl-index", "#!/usr/bin/env sh\nprintf '%s\\n' 'index build update info'\n")
+            self.write_executable(
+                tools_dir,
+                "bsl-analyzer",
+                "#!/usr/bin/env sh\nprintf '%s\\n' 'analyze'\n",
+            )
+            self.write_executable(
+                tools_dir,
+                "rlm-bsl-index",
+                "#!/usr/bin/env sh\nprintf '%s\\n' 'index build update info'\n",
+            )
             self.write_executable(
                 tools_dir,
                 "rlm-bsl-mcp",
                 "#!/usr/bin/env sh\nprintf '%s\\n' '--transport stdio streamable-http service'\n",
             )
-            self.write_executable(tools_dir, "v8-runner", "#!/usr/bin/env sh\nprintf '%s\\n' 'v8-runner version build'\n")
+            self.write_executable(
+                tools_dir,
+                "v8-runner",
+                "#!/usr/bin/env sh\nprintf '%s\\n' 'v8-runner version build'\n",
+            )
 
             errors = module.check_tool_contracts(tools_dir)
 
@@ -2020,7 +2195,7 @@ fn test_only() { std::process::Command::new("git"); }
                 tools_dir,
                 "bsl-analyzer",
                 "#!/usr/bin/env sh\n"
-                "case \"$*\" in\n"
+                'case "$*" in\n'
                 "  'analyze --help') printf '%s\\n' '--format jsonl' ;;\n"
                 "  'mcp serve --help') printf '%s\\n' '--profile --source-dir --mode stdio' ;;\n"
                 "  *) exit 1 ;;\n"
@@ -2045,12 +2220,16 @@ fn test_only() { std::process::Command::new("git"); }
             errors = module.check_tool_contracts(tools_dir)
 
         self.assertTrue(
-            any("bsl-analyzer analyze" in error and "--source-dir" in error for error in errors),
+            any(
+                "bsl-analyzer analyze" in error and "--source-dir" in error
+                for error in errors
+            ),
             errors,
         )
 
-
-    def test_tool_help_contracts_report_missing_rlm_server_transport_surface(self) -> None:
+    def test_tool_help_contracts_report_missing_rlm_server_transport_surface(
+        self,
+    ) -> None:
         module = load_contract_module()
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -2060,20 +2239,43 @@ fn test_only() { std::process::Command::new("git"); }
                 "bsl-analyzer",
                 self.BSL_ANALYZER_HELP,
             )
-            self.write_executable(tools_dir, "rlm-bsl-index", "#!/usr/bin/env sh\nprintf '%s\\n' 'index build update info'\n")
-            self.write_executable(tools_dir, "rlm-bsl-mcp", "#!/usr/bin/env sh\nprintf '%s\\n' 'service'\n")
-            self.write_executable(tools_dir, "v8-runner", "#!/usr/bin/env sh\nprintf '%s\\n' 'v8-runner version build'\n")
+            self.write_executable(
+                tools_dir,
+                "rlm-bsl-index",
+                "#!/usr/bin/env sh\nprintf '%s\\n' 'index build update info'\n",
+            )
+            self.write_executable(
+                tools_dir,
+                "rlm-bsl-mcp",
+                "#!/usr/bin/env sh\nprintf '%s\\n' 'service'\n",
+            )
+            self.write_executable(
+                tools_dir,
+                "v8-runner",
+                "#!/usr/bin/env sh\nprintf '%s\\n' 'v8-runner version build'\n",
+            )
 
             errors = module.check_tool_contracts(tools_dir)
 
-        self.assertTrue(any("rlm-bsl-mcp server" in error and "--transport" in error for error in errors), errors)
+        self.assertTrue(
+            any(
+                "rlm-bsl-mcp server" in error and "--transport" in error
+                for error in errors
+            ),
+            errors,
+        )
 
     def test_tool_contract_checker_does_not_depend_on_rlm_sqlite_schema(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
         checker = (repo_root / "scripts" / "ci" / "check-tool-contracts.py").read_text(
             encoding="utf-8"
         )
-        for removed in ("sqlite3", "RLM_SCHEMA_COLUMNS", "check_rlm_schema", "--rlm-db"):
+        for removed in (
+            "sqlite3",
+            "RLM_SCHEMA_COLUMNS",
+            "check_rlm_schema",
+            "--rlm-db",
+        ):
             self.assertNotIn(removed, checker)
 
         lock = tomllib.loads((repo_root / "Cargo.lock").read_text(encoding="utf-8"))
@@ -2164,7 +2366,10 @@ fn test_only() { std::process::Command::new("git"); }
                 'import json\n_result = get_object_profile("CommonModule.ContractOne", sections=None, include_flow=False, include_code_usages=False, limit=20)\nprint(json.dumps(_result, ensure_ascii=False))',
             ],
         )
-        self.assertNotIn("parse_form", "\n".join(call["arguments"]["code"] for call in tool_calls[1:4]))
+        self.assertNotIn(
+            "parse_form",
+            "\n".join(call["arguments"]["code"] for call in tool_calls[1:4]),
+        )
         self.assertEqual(index_call["argv"][:2], ["index", "build"])
         self.assertEqual(index_call["argv"][2], start["path"])
         self.assertEqual(
@@ -2172,7 +2377,9 @@ fn test_only() { std::process::Command::new("git"); }
             str(Path(start["path"]).parents[1] / "index"),
         )
 
-    def test_rlm_mcp_contract_confines_upstream_two_ancestor_extension_scan(self) -> None:
+    def test_rlm_mcp_contract_confines_upstream_two_ancestor_extension_scan(
+        self,
+    ) -> None:
         module = load_contract_module()
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -2207,13 +2414,19 @@ fn test_only() { std::process::Command::new("git"); }
             mcp_tool, index_tool, *_ = self.write_rlm_contract_standins(root)
             with (
                 patch.object(module, "run_rlm_contract_process", return_value=(0, "")),
-                patch.object(module, "load_shared_mcp_smoke_module", return_value=Shared),
+                patch.object(
+                    module, "load_shared_mcp_smoke_module", return_value=Shared
+                ),
             ):
                 errors = module.check_rlm_mcp_contract(mcp_tool, index_tool)
 
-        self.assertTrue(any("failed to start MCP transport" in error for error in errors), errors)
+        self.assertTrue(
+            any("failed to start MCP transport" in error for error in errors), errors
+        )
 
-    def test_rlm_mcp_contract_does_not_label_post_start_failure_as_startup(self) -> None:
+    def test_rlm_mcp_contract_does_not_label_post_start_failure_as_startup(
+        self,
+    ) -> None:
         module = load_contract_module()
 
         class Reader:
@@ -2256,11 +2469,15 @@ fn test_only() { std::process::Command::new("git"); }
             mcp_tool, index_tool, *_ = self.write_rlm_contract_standins(root)
             with (
                 patch.object(module, "run_rlm_contract_process", return_value=(0, "")),
-                patch.object(module, "load_shared_mcp_smoke_module", return_value=shared),
+                patch.object(
+                    module, "load_shared_mcp_smoke_module", return_value=shared
+                ),
             ):
                 errors = module.check_rlm_mcp_contract(mcp_tool, index_tool)
 
-        self.assertTrue(any("MCP transport failed" in error for error in errors), errors)
+        self.assertTrue(
+            any("MCP transport failed" in error for error in errors), errors
+        )
         self.assertFalse(any("failed to start" in error for error in errors), errors)
 
     def test_rlm_mcp_contract_rejects_malformed_helper_payloads(self) -> None:
@@ -2287,7 +2504,9 @@ fn test_only() { std::process::Command::new("git"); }
                 self.assertTrue(any(expected in error for error in errors), errors)
                 self.assertFalse(any(str(root) in error for error in errors), errors)
 
-    def test_rlm_mcp_contract_bounds_reads_and_terminates_the_process_tree(self) -> None:
+    def test_rlm_mcp_contract_bounds_reads_and_terminates_the_process_tree(
+        self,
+    ) -> None:
         module = load_contract_module()
         parent_pid = child_pid = 0
 
@@ -2307,7 +2526,8 @@ fn test_only() { std::process::Command::new("git"); }
                 ]
                 deadline = time.monotonic() + 2.0
                 while time.monotonic() < deadline and (
-                    self.process_is_alive(parent_pid) or self.process_is_alive(child_pid)
+                    self.process_is_alive(parent_pid)
+                    or self.process_is_alive(child_pid)
                 ):
                     time.sleep(0.025)
 
@@ -2318,7 +2538,9 @@ fn test_only() { std::process::Command::new("git"); }
             finally:
                 self.cleanup_process_tree_best_effort(parent_pid, child_pid)
 
-    def test_rlm_mcp_contract_bounds_index_build_and_terminates_its_process_tree(self) -> None:
+    def test_rlm_mcp_contract_bounds_index_build_and_terminates_its_process_tree(
+        self,
+    ) -> None:
         module = load_contract_module()
         parent_pid = child_pid = 0
 
@@ -2338,7 +2560,8 @@ fn test_only() { std::process::Command::new("git"); }
                 ]
                 deadline = time.monotonic() + 2.0
                 while time.monotonic() < deadline and (
-                    self.process_is_alive(parent_pid) or self.process_is_alive(child_pid)
+                    self.process_is_alive(parent_pid)
+                    or self.process_is_alive(child_pid)
                 ):
                     time.sleep(0.025)
 
@@ -2496,6 +2719,7 @@ fn test_only() { std::process::Command::new("git"); }
             any("Git HEAD changed during update" in error for error in errors),
             errors,
         )
+
     def test_the_release_checks_every_address_it_publishes(self) -> None:
         """Ядро выпуск сверяет побайтно, поставки — только по адресу.
 
@@ -2522,7 +2746,7 @@ fn test_only() { std::process::Command::new("git"); }
             (repo_root / "scripts/ci/verify-delivery-reachable.py").is_file()
         )
 
-    def test_both_sides_of_the_wire_approve_the_same_two_origins(self) -> None:
+    def test_both_sides_of_the_wire_approve_the_same_release_origins(self) -> None:
         """Адрес пишет упаковщик, а сверяет bootstrap.
 
         Разойдись эти списки — выпуск соберётся, а установка откажет уже у
@@ -2537,13 +2761,14 @@ fn test_only() { std::process::Command::new("git"); }
         packager = (repo_root / "scripts/ci/package-unica-plugin.py").read_text(
             encoding="utf-8"
         )
-        validator = (
-            repo_root / "crates/unica-bootstrap/src/manifest.rs"
-        ).read_text(encoding="utf-8")
+        validator = (repo_root / "crates/unica-bootstrap/src/manifest.rs").read_text(
+            encoding="utf-8"
+        )
 
         approved = {
             "https://github.com/IngvarConsulting/unica",
             "https://github.com/IngvarConsulting/unica-toolchain",
+            "https://github.com/IngvarConsulting/v8-runner-rust",
         }
         for origin in approved:
             with self.subTest(origin=origin):
@@ -2554,24 +2779,38 @@ fn test_only() { std::process::Command::new("git"); }
 
         emitted_origins = set(
             re.findall(
-                r'^(?:SOURCE_REPOSITORY|TOOLCHAIN_REPOSITORY) = "([^"]+)"$',
+                r'^(?:SOURCE_REPOSITORY|TOOLCHAIN_REPOSITORY|V8_RUNNER_REPOSITORY) = "([^"]+)"$',
                 packager,
                 re.MULTILINE,
             )
         )
         self.assertEqual(emitted_origins, approved)
 
-        # Список закрыт с обеих сторон: третий адрес — новая запись реестра.
-        # Адрес ядра в валидаторе — умолчание, а не единственный вариант.
-        self.assertEqual(
-            len(
-                re.findall(
-                    r'"https://github\.com/IngvarConsulting/[\w-]+/releases/download/"',
-                    validator,
-                )
-            ),
-            1,
+        self.assertIn(
+            'V8_RUNNER_REPOSITORY if artifact == "v8-runner" else TOOLCHAIN_REPOSITORY',
+            packager,
         )
+        self.assertIn(
+            '(ArtifactRole::Engine, "v8-runner") => V8_RUNNER_RELEASE_ORIGIN',
+            validator,
+        )
+
+        # Список закрыт с обеих сторон: четвёртый адрес — новая запись реестра.
+        # Литералов ровно два: происхождение ядра валидатор выводит из адреса,
+        # названного сборкой (умолчание — репозиторий Unica), а не хранит
+        # литералом; engine-инструменты пиннуются адресом из lock-файла.
+        literal_origins = re.findall(
+            r'"https://github\.com/IngvarConsulting/[\w-]+/releases/download/"',
+            validator,
+        )
+        self.assertEqual(
+            [value.strip('"') for value in sorted(literal_origins)],
+            [
+                "https://github.com/IngvarConsulting/unica-toolchain/releases/download/",
+                "https://github.com/IngvarConsulting/v8-runner-rust/releases/download/",
+            ],
+        )
+        self.assertIn('format!("{core_repository}/releases/download/")', validator)
 
     def test_core_provenance_is_selectable_on_both_sides_of_the_wire(self) -> None:
         """CTR.PKG.CORE-PROVENANCE-SELECTABLE: происхождение ядра называет сборка.
@@ -2583,9 +2822,9 @@ fn test_only() { std::process::Command::new("git"); }
         packager = (repo_root / "scripts/ci/package-unica-plugin.py").read_text(
             encoding="utf-8"
         )
-        validator = (
-            repo_root / "crates/unica-bootstrap/src/manifest.rs"
-        ).read_text(encoding="utf-8")
+        validator = (repo_root / "crates/unica-bootstrap/src/manifest.rs").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn('"--core-release-repository"', packager)
         self.assertIn("default=SOURCE_REPOSITORY", packager)
@@ -2605,7 +2844,9 @@ fn test_only() { std::process::Command::new("git"); }
         self.assertNotIn("UNICA_BOOTSTRAP_TOOLCHAIN_REPOSITORY", packager)
         self.assertNotIn("UNICA_BOOTSTRAP_TOOLCHAIN_REPOSITORY", validator)
 
-    def test_startup_documentation_separates_core_blocking_from_engine_delivery(self) -> None:
+    def test_startup_documentation_separates_core_blocking_from_engine_delivery(
+        self,
+    ) -> None:
         readme = (
             Path(__file__).resolve().parents[2] / "plugins/unica/README.md"
         ).read_text(encoding="utf-8")

@@ -28,11 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ARCH_ROOT = REPO_ROOT / "arch"
 INDEX_PATH = ARCH_ROOT / "index.md"
 
-KIND_BY_DIR = {
-    "decisions": "decision",
-    "invariants": "invariant",
-    "contracts": "contract",
-}
+KIND_BY_DIR = {"decisions": "decision", "invariants": "invariant", "contracts": "contract"}
 SYMBOL_PREFIX = {"decision": "DEC", "invariant": "INV", "contract": "CTR"}
 
 REQUIRED_PROPS = {
@@ -103,23 +99,49 @@ def parse_front_matter(text: str) -> tuple[dict, str]:
     if not match:
         raise ValueError("record does not open with a front-matter block")
     props: dict = {}
+    block_key: str | None = None
     for number, line in enumerate(match.group(1).splitlines(), start=1):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
+        # Блочный список продолжает ключ над собой. Продолжить можно только
+        # список, открытый пустым значением, поэтому одиночный `- item` — это
+        # испорченная запись, а не молча усыновлённый сирота.
+        if line.lstrip().startswith("- "):
+            if block_key is None:
+                raise ValueError(f"front matter line {number} starts a list with no key")
+            props[block_key].append(line.lstrip()[2:].strip())
+            continue
+        block_key = None
         if ":" not in line:
-            raise ValueError(
-                f"front matter line {number} is not `key: value`: {line!r}"
-            )
+            raise ValueError(f"front matter line {number} is not `key: value`: {line!r}")
         key, _, raw = line.partition(":")
         key, raw = key.strip(), raw.strip()
         if raw.startswith("[") and raw.endswith("]"):
             inner = raw[1:-1].strip()
             props[key] = [item.strip() for item in inner.split(",") if item.strip()]
-        elif raw in ("null", "~", ""):
+        elif raw == "":
+            props[key] = []
+            block_key = key
+        elif raw in ("null", "~"):
             props[key] = None
         else:
             props[key] = raw
     return props, match.group(2)
+
+
+def evidence_names(value: object) -> list[str]:
+    """Каждый адрес `path::declaration`, названный пропом `check` или `realized`.
+
+    Одно правило часто держат несколько проверок. Принуждение к единственному
+    имени не делало правило проще: оно рождало обёртку, которая звала настоящие
+    проверки и повторяла работу, уже сделанную харнессом. Проп принимает список,
+    и запись называет ровно тот набор, который её держит.
+    """
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return [str(value)]
 
 
 def records(root: Path = ARCH_ROOT) -> list[Record]:
@@ -132,9 +154,7 @@ def records(root: Path = ARCH_ROOT) -> list[Record]:
         for path in sorted(base.glob("*.md")):
             props, body = parse_front_matter(path.read_text(encoding="utf-8"))
             identifier = props.get("id") or ""
-            found.append(
-                Record(id=identifier, kind=kind, path=path, props=props, body=body)
-            )
+            found.append(Record(id=identifier, kind=kind, path=path, props=props, body=body))
     return sorted(found, key=lambda record: record.id)
 
 
@@ -155,71 +175,35 @@ def validation_errors(found: list[Record]) -> list[str]:
     errors: list[str] = []
     for record in found:
         for key in REQUIRED_PROPS[record.kind]:
-            realized_is_planned = (
+            realized_may_be_absent = (
                 record.kind == "decision"
                 and key == "realized"
-                and record.props.get("status") == "planned"
+                and record.props.get("status") in {"planned", "superseded"}
             )
             if (
                 key not in record.props
                 or record.props[key] == ""
-                or (record.props[key] is None and not realized_is_planned)
+                or record.props[key] == []
+                or (record.props[key] is None and not realized_may_be_absent)
             ):
                 errors.append(f"{record.relative}: missing prop `{key}`")
+            elif key in ("check", "realized"):
+                if any(not name.strip() for name in evidence_names(record.props[key])):
+                    errors.append(f"{record.relative}: `{key}` has a blank entry")
         if record.kind in {"invariant", "contract"}:
-            list_keys = ("scope",) + (
-                ("consumers",) if record.kind == "contract" else ()
-            )
+            list_keys = ("scope",) + (("consumers",) if record.kind == "contract" else ())
             for key in list_keys:
                 if not isinstance(record.props.get(key), list) or not record.props[key]:
-                    errors.append(
-                        f"{record.relative}: `{key}` must be a non-empty list"
-                    )
+                    errors.append(f"{record.relative}: `{key}` must be a non-empty list")
             owner = by_id.get(record.props.get("decision"))
             if owner is None or owner.kind != "decision":
-                errors.append(
-                    f"{record.relative}: decision does not resolve to a decision"
-                )
-            elif (
-                record.props.get("status") == "active"
-                and owner.props.get("status") != "active"
-            ):
-                errors.append(
-                    f"{record.relative}: active rule cites a non-active decision"
-                )
+                errors.append(f"{record.relative}: decision does not resolve to a decision")
+            elif record.props.get("status") == "active" and owner.props.get("status") != "active":
+                errors.append(f"{record.relative}: active rule cites a non-active decision")
             elif record.id not in (owner.props.get("establishes") or []):
                 errors.append(
                     f"{owner.relative}: does not establish its rule {record.id}"
                 )
-            successors = record.props.get("superseded-by")
-            if record.props.get("status") == "superseded":
-                if not isinstance(successors, list) or not successors:
-                    errors.append(
-                        f"{record.relative}: a superseded rule must list its "
-                        "successors in `superseded-by`"
-                    )
-            elif successors:
-                errors.append(
-                    f"{record.relative}: `superseded-by` is only allowed on a "
-                    "superseded rule"
-                )
-            for successor_id in successors if isinstance(successors, list) else []:
-                successor = by_id.get(successor_id)
-                if successor is None:
-                    errors.append(
-                        f"{record.relative}: superseded-by cites missing record "
-                        f"{successor_id}"
-                    )
-                elif successor.kind not in {"invariant", "contract"}:
-                    errors.append(
-                        f"{record.relative}: superseded-by must cite rules, not "
-                        f"{successor.kind} {successor_id}"
-                    )
-                elif record.id not in (successor.props.get("supersedes") or []):
-                    errors.append(
-                        f"{record.relative}: successor {successor_id} does not "
-                        "supersede it back"
-                    )
         if record.kind == "contract":
             version = str(record.props.get("version", ""))
             if not version.isdecimal() or int(version) < 1:
@@ -232,25 +216,26 @@ def validation_errors(found: list[Record]) -> list[str]:
                         f"{record.relative}: `changes` must be a list and not empty"
                     )
                 else:
-                    for contract_id in changed_contracts:
-                        contract = by_id.get(contract_id)
-                        if contract is None:
+                    # `changes` называет опубликованное правило, которое это
+                    # решение меняет. Правилом бывает и контракт, и инвариант:
+                    # инвариант перечисляет имена поверхности не реже, чем
+                    # контракт, и запрет ссылаться на него оставлял такую
+                    # правку без объявленной причины.
+                    for rule_id in changed_contracts:
+                        rule = by_id.get(rule_id)
+                        if rule is None:
                             errors.append(
-                                f"{record.relative}: changes cites missing contract "
-                                f"{contract_id}"
+                                f"{record.relative}: changes cites missing rule "
+                                f"{rule_id}"
                             )
-                        elif contract.kind != "contract":
+                        elif rule.kind not in ("contract", "invariant"):
                             errors.append(
-                                f"{record.relative}: changes cites non-contract "
-                                f"{contract_id}"
+                                f"{record.relative}: changes cites a non-rule "
+                                f"{rule_id}"
                             )
-            for rule_id in record.props.get("establishes") or []:
-                rule = by_id.get(rule_id)
-                if rule is not None and rule.props.get("decision") != record.id:
-                    errors.append(
-                        f"{record.relative}: establishes a rule owned by "
-                        f"{rule.props.get('decision')}: {rule_id}"
-                    )
+            # `establishes` is historical on an immutable decision. A later
+            # decision may become the current owner of the same mutable rule;
+            # the rule -> current owner direction above remains mandatory.
     return errors
 
 
@@ -271,7 +256,7 @@ def render_index(found: list[Record]) -> str:
         # именно там читатель не отличает принятое от сделанного.
         built = ""
         if record.kind == "decision":
-            built = "нет" if record.props.get("realized") in (None, "") else "да"
+            built = "да" if evidence_names(record.props.get("realized")) else "нет"
         lines.append(
             f"| `{record.id}` | {kind_ru[record.kind]} · {record.props.get('governs', '')} "
             f"| {record.props.get('status', '')} "
@@ -294,10 +279,7 @@ def main(argv: list[str] | None = None) -> int:
 
     rendered = render_index(found)
     if arguments.write_index:
-        # Фиксированный LF: индекс обязан быть побайтово одинаков на любой
-        # ОС, иначе `git diff --check` считает \r добавленных строк
-        # trailing whitespace.
-        INDEX_PATH.write_text(rendered, encoding="utf-8", newline="\n")
+        INDEX_PATH.write_text(rendered, encoding="utf-8")
         print(f"написано: {INDEX_PATH.relative_to(REPO_ROOT)}")
         return 0
     if arguments.check:

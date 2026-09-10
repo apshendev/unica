@@ -14,10 +14,11 @@ from pathlib import Path
 
 PLUGIN_ID = "unica"
 
-# Ядро собирается здесь, поставки приезжают из тулчейна. Адресов ровно два, и
-# оба названы: третий — новая запись реестра, а не правка этого списка.
+# Ядро собирается здесь, внешние движки приезжают из тулчейна, а сопровождаемый
+# v8-runner — из собственного репозитория. Перечень закрыт по артефакту.
 SOURCE_REPOSITORY = "https://github.com/IngvarConsulting/unica"
 TOOLCHAIN_REPOSITORY = "https://github.com/IngvarConsulting/unica-toolchain"
+V8_RUNNER_REPOSITORY = "https://github.com/IngvarConsulting/v8-runner-rust"
 
 # Формы доставки: архив распаковывается, одиночный файл ложится под своим
 # именем. Форму объявляет издатель типом содержимого.
@@ -82,7 +83,9 @@ def git_tracked_plugin_files(repo_root: Path, plugin_src: Path) -> list[str]:
 
 def validate_tracked_plugin_source_path(rel_path: Path) -> None:
     if rel_path.is_absolute() or ".." in rel_path.parts:
-        raise SystemExit(f"git tracked plugin file escapes plugin root: {rel_path.as_posix()}")
+        raise SystemExit(
+            f"git tracked plugin file escapes plugin root: {rel_path.as_posix()}"
+        )
     ignored_parts = set(rel_path.parts) & SOURCE_PACKAGE_IGNORES
     if ignored_parts:
         raise SystemExit(
@@ -102,7 +105,9 @@ def copy_tracked_plugin_source(repo_root: Path, plugin_src: Path, dst: Path) -> 
         validate_tracked_plugin_source_path(rel_path)
         source = plugin_src / rel_path
         if source.is_symlink():
-            raise SystemExit(f"tracked plugin source symlink is not allowed: {rel_path.as_posix()}")
+            raise SystemExit(
+                f"tracked plugin source symlink is not allowed: {rel_path.as_posix()}"
+            )
         target = dst / rel_path
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
@@ -116,10 +121,26 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def package_tree_sha256(root: Path) -> str:
+    """Digest package paths and bytes so the proof binds the assembled tree."""
+    digest = hashlib.sha256()
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(path.stat().st_size.to_bytes(8, "big"))
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
 def load_lock(path: Path) -> dict:
     lock = json.loads(path.read_text(encoding="utf-8"))
     if lock.get("schemaVersion") != 1:
-        raise SystemExit(f"unsupported tools lock schemaVersion in {path}: {lock.get('schemaVersion')}")
+        raise SystemExit(
+            f"unsupported tools lock schemaVersion in {path}: {lock.get('schemaVersion')}"
+        )
     return lock
 
 
@@ -157,7 +178,9 @@ def load_tool_bundles(
     locked_tools = lock_by_tool(lock)
     expected_targets = set(lock.get("targets", {}))
     if target is not None and target not in expected_targets:
-        raise SystemExit(f"unknown target {target}; expected one of {', '.join(sorted(expected_targets))}")
+        raise SystemExit(
+            f"unknown target {target}; expected one of {', '.join(sorted(expected_targets))}"
+        )
 
     manifests = sorted(tools_root.rglob("tools.json"))
     if not manifests:
@@ -177,7 +200,9 @@ def load_tool_bundles(
         for tool in manifest["tools"]:
             name = tool["name"]
             if name not in locked_tools:
-                raise SystemExit(f"tool bundle contains tool not present in lock: {name}")
+                raise SystemExit(
+                    f"tool bundle contains tool not present in lock: {name}"
+                )
             validate_tool_against_lock(tool, locked_tools[name], manifest_target)
 
             current = grouped.setdefault(
@@ -193,9 +218,17 @@ def load_tool_bundles(
                     "binaries": {},
                 },
             )
-            for key in ("version", "repository", "sourceTag", "sourceCommit", "license"):
+            for key in (
+                "version",
+                "repository",
+                "sourceTag",
+                "sourceCommit",
+                "license",
+            ):
                 if current[key] != tool[key]:
-                    raise SystemExit(f"inconsistent {key} for {name}: {current[key]} != {tool[key]}")
+                    raise SystemExit(
+                        f"inconsistent {key} for {name}: {current[key]} != {tool[key]}"
+                    )
             current["binaries"][manifest_target] = {
                 "targetTriple": tool["targetTriple"],
                 "binaryPath": tool["binaryPath"],
@@ -203,7 +236,9 @@ def load_tool_bundles(
             }
 
     if target is not None and not grouped:
-        raise SystemExit(f"no tools.json files found for target {target} under {tools_root}")
+        raise SystemExit(
+            f"no tools.json files found for target {target} under {tools_root}"
+        )
 
     for name in sorted(locked_tools):
         if name not in grouped:
@@ -214,7 +249,9 @@ def load_tool_bundles(
                 raise SystemExit(f"{name} bundle has no targets")
             unknown_targets = actual_targets - expected_targets
             if unknown_targets:
-                raise SystemExit(f"{name} bundle contains unknown targets: {sorted(unknown_targets)}")
+                raise SystemExit(
+                    f"{name} bundle contains unknown targets: {sorted(unknown_targets)}"
+                )
         elif actual_targets != expected_targets:
             raise SystemExit(
                 f"{name} target matrix differs from lock: {sorted(actual_targets)} != {sorted(expected_targets)}"
@@ -229,16 +266,24 @@ def read_release_version(plugin_src: Path) -> str:
     for host, manifest_dir in HOST_MANIFEST_DIRS.items():
         manifest_path = plugin_src / manifest_dir / "plugin.json"
         if not manifest_path.is_file():
-            raise SystemExit(f"plugin source is missing the {host} manifest: {manifest_path}")
-        versions[host] = json.loads(manifest_path.read_text(encoding="utf-8"))["version"]
+            raise SystemExit(
+                f"plugin source is missing the {host} manifest: {manifest_path}"
+            )
+        versions[host] = json.loads(manifest_path.read_text(encoding="utf-8"))[
+            "version"
+        ]
     distinct = set(versions.values())
     if len(distinct) != 1:
-        detail = ", ".join(f"{host}={version}" for host, version in sorted(versions.items()))
+        detail = ", ".join(
+            f"{host}={version}" for host, version in sorted(versions.items())
+        )
         raise SystemExit(f"host manifests disagree on the release version: {detail}")
     return distinct.pop()
 
 
-def write_manifest(plugin_dir: Path, grouped_tools: dict[str, dict], lock_file: Path) -> None:
+def write_manifest(
+    plugin_dir: Path, grouped_tools: dict[str, dict], lock_file: Path
+) -> None:
     lock_path = lock_file.resolve()
     manifest = {
         "schemaVersion": 2,
@@ -256,7 +301,9 @@ def write_manifest(plugin_dir: Path, grouped_tools: dict[str, dict], lock_file: 
         ],
     }
     path = plugin_dir / "third-party" / "manifest.json"
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 # One launcher, both hosts. Claude Code rewrites `${CLAUDE_PLUGIN_ROOT}` in the
@@ -299,7 +346,9 @@ def write_packaged_mcp_launcher(
         "host, selects a native bootstrap, verifies the pinned runtime, and "
         "transparently launches unica."
     )
-    mcp_path.write_text(json.dumps(mcp, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    mcp_path.write_text(
+        json.dumps(mcp, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def assert_host_manifests_present(plugin_dir: Path) -> None:
@@ -332,7 +381,9 @@ def claude_plugin_source(*, release_tag: str) -> dict:
     }
 
 
-def write_claude_marketplace(plugin_dir: Path, dest_path: Path, *, source: dict | str) -> None:
+def write_claude_marketplace(
+    plugin_dir: Path, dest_path: Path, *, source: dict | str
+) -> None:
     """Derive the Claude catalog from the packaged manifest.
 
     Unlike the Codex catalog there is no hand-maintained source file: every field
@@ -340,7 +391,9 @@ def write_claude_marketplace(plugin_dir: Path, dest_path: Path, *, source: dict 
     here removes a contract that could drift from the manifest.
     """
     manifest = json.loads(
-        (plugin_dir / HOST_MANIFEST_DIRS["claude"] / "plugin.json").read_text(encoding="utf-8")
+        (plugin_dir / HOST_MANIFEST_DIRS["claude"] / "plugin.json").read_text(
+            encoding="utf-8"
+        )
     )
     author = manifest.get("author", {})
     if not author.get("name"):
@@ -349,7 +402,14 @@ def write_claude_marketplace(plugin_dir: Path, dest_path: Path, *, source: dict 
     # KeyError from whichever line happened to reach it first.
     missing = [
         key
-        for key in ("description", "homepage", "repository", "license", "keywords", "version")
+        for key in (
+            "description",
+            "homepage",
+            "repository",
+            "license",
+            "keywords",
+            "version",
+        )
         if not manifest.get(key)
     ]
     if missing:
@@ -379,10 +439,14 @@ def write_claude_marketplace(plugin_dir: Path, dest_path: Path, *, source: dict 
         "plugins": [entry],
     }
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    dest_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    dest_path.write_text(
+        json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
-def write_local_debug_mcp_launcher(plugin_dir: Path, target: str, *, host: str = "codex") -> None:
+def write_local_debug_mcp_launcher(
+    plugin_dir: Path, target: str, *, host: str = "codex"
+) -> None:
     if target not in SUPPORTED_TARGETS:
         raise SystemExit(f"unsupported local debug target: {target}")
     if host not in HOST_MANIFEST_DIRS:
@@ -402,10 +466,14 @@ def write_local_debug_mcp_launcher(plugin_dir: Path, target: str, *, host: str =
         server["args"] = []
         server["cwd"] = "."
     server["note"] = "Development-only current-host Unica MCP binary."
-    mcp_path.write_text(json.dumps(mcp, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    mcp_path.write_text(
+        json.dumps(mcp, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
-def write_official_marketplace(source_path: Path, dest_path: Path, *, marketplace_name: str = PLUGIN_ID) -> None:
+def write_official_marketplace(
+    source_path: Path, dest_path: Path, *, marketplace_name: str = PLUGIN_ID
+) -> None:
     data = json.loads(source_path.read_text(encoding="utf-8"))
     data["name"] = marketplace_name
     data.setdefault("interface", {})["displayName"] = DISPLAY_NAME
@@ -421,10 +489,14 @@ def write_official_marketplace(source_path: Path, dest_path: Path, *, marketplac
     }
     plugin["category"] = plugin.get("category", "Coding")
 
-    dest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    dest_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
-def write_public_marketplace(source_path: Path, dest_path: Path, *, release_tag: str) -> None:
+def write_public_marketplace(
+    source_path: Path, dest_path: Path, *, release_tag: str
+) -> None:
     data = json.loads(source_path.read_text(encoding="utf-8"))
     data["name"] = PLUGIN_ID
     data.setdefault("interface", {})["displayName"] = DISPLAY_NAME
@@ -443,7 +515,9 @@ def write_public_marketplace(source_path: Path, dest_path: Path, *, release_tag:
     }
     plugin.setdefault("policy", {})["installation"] = "AVAILABLE"
     plugin["category"] = plugin.get("category", "Coding")
-    dest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    dest_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def _lower_hex(value: str, length: int) -> bool:
@@ -482,7 +556,9 @@ def load_runtime_metadata(
         if role not in ("core", "engine"):
             raise SystemExit(f"invalid runtime metadata role for {artifact}: {role}")
         if (artifact == "unica") != (role == "core"):
-            raise SystemExit(f"artifact {artifact} declares a role that does not match its name")
+            raise SystemExit(
+                f"artifact {artifact} declares a role that does not match its name"
+            )
         if not data.get("version"):
             raise SystemExit(f"runtime metadata for {artifact} has no version")
         if data.get("pluginVersion") != plugin_version:
@@ -500,23 +576,37 @@ def load_runtime_metadata(
         if role == "core":
             # Ядро собирается здесь, и его имя выводится единым правилом.
             expected_asset = f"{artifact}-runtime-{target}.tar.gz"
-            if asset.get("name") != expected_asset or asset.get("mediaType") != "application/gzip":
-                raise SystemExit(f"runtime asset identity mismatch for {artifact} {target}")
+            if (
+                asset.get("name") != expected_asset
+                or asset.get("mediaType") != "application/gzip"
+            ):
+                raise SystemExit(
+                    f"runtime asset identity mismatch for {artifact} {target}"
+                )
             if origin is not None:
-                raise SystemExit(f"core artifact {artifact} must not name a foreign origin")
+                raise SystemExit(
+                    f"core artifact {artifact} must not name a foreign origin"
+                )
         else:
-            # Поставку издал тулчейн: имя и тег назвал он, а не мы.
+            # Имя и тег назвал издатель поставки, а не упаковщик Unica.
             name = asset.get("name", "")
             if not isinstance(name, str) or not name or "/" in name or "\\" in name:
-                raise SystemExit(f"unsafe runtime asset name for {artifact} {target}: {name}")
+                raise SystemExit(
+                    f"unsafe runtime asset name for {artifact} {target}: {name}"
+                )
             if asset.get("mediaType") not in DELIVERY_MEDIA_TYPES:
                 raise SystemExit(
                     f"unsupported delivery mediaType for {artifact} {target}: "
                     f"{asset.get('mediaType')}"
                 )
             if not isinstance(origin, dict):
-                raise SystemExit(f"artifact {artifact} {target} does not name its origin")
-            if origin.get("repository") != TOOLCHAIN_REPOSITORY:
+                raise SystemExit(
+                    f"artifact {artifact} {target} does not name its origin"
+                )
+            approved_repository = (
+                V8_RUNNER_REPOSITORY if artifact == "v8-runner" else TOOLCHAIN_REPOSITORY
+            )
+            if origin.get("repository") != approved_repository:
                 raise SystemExit(
                     f"artifact {artifact} {target} comes from an unapproved repository: "
                     f"{origin.get('repository')}"
@@ -553,15 +643,15 @@ def load_runtime_metadata(
         # Точку входа запускает bootstrap, и запускает он только ядро.
         entrypoint = data.get("entrypoint")
         if role == "core":
-            expected_entrypoint = (
-                f"bin/{target}/{'unica.exe' if executable.endswith('.exe') else 'unica'}"
-            )
+            expected_entrypoint = f"bin/{target}/{'unica.exe' if executable.endswith('.exe') else 'unica'}"
             if entrypoint != expected_entrypoint:
                 raise SystemExit(f"runtime entrypoint mismatch for {target}")
             if expected_entrypoint not in paths:
                 raise SystemExit(f"runtime entrypoint is not declared for {target}")
         elif entrypoint is not None:
-            raise SystemExit(f"engine artifact {artifact} must not declare an entrypoint")
+            raise SystemExit(
+                f"engine artifact {artifact} must not declare an entrypoint"
+            )
 
         artifacts.setdefault(artifact, {})[target] = data
 
@@ -574,7 +664,9 @@ def load_runtime_metadata(
             )
         versions = {data["version"] for data in by_target.values()}
         if len(versions) != 1:
-            raise SystemExit(f"artifact {artifact} carries conflicting versions: {sorted(versions)}")
+            raise SystemExit(
+                f"artifact {artifact} carries conflicting versions: {sorted(versions)}"
+            )
     return artifacts
 
 
@@ -622,9 +714,10 @@ def write_release_runtime_manifest(
             item = by_target[target]
             asset = dict(item["asset"])
             origin = item.get("assetOrigin")
-            # Происхождение решает роль: ядро лежит в выпуске плагина, всё
-            # прочее — в выпуске тулчейна под тегом, который назвал замок.
-            # Владельца выпуска ядра назвала сборка (CTR.PKG.CORE-PROVENANCE-SELECTABLE).
+            # Происхождение решает роль: ядро лежит в выпуске плагина, а
+            # движок — в своём проверенном release-источнике под тегом,
+            # который назвал lock-файл. Владельца выпуска ядра назвала
+            # сборка (CTR.PKG.CORE-PROVENANCE-SELECTABLE).
             if origin is None:
                 asset["url"] = (
                     f"{core_release_repository}/releases/download/{release_tag}/{asset['name']}"
@@ -677,6 +770,33 @@ def assert_archive_clean(marketplace_dir: Path) -> None:
             raise SystemExit(f"archive contains generated file: {rel}")
         if path.is_file() and path.name.endswith((".tar.gz", ".zip")):
             raise SystemExit(f"archive contains nested package artifact: {rel}")
+
+
+def write_p0_package_evidence(
+    marketplace_dir: Path, destination: Path, *, source_commit: str
+) -> None:
+    """Write package identity without claiming a tag or a publication."""
+    plugin_dir = marketplace_dir / "plugins" / PLUGIN_ID
+    version = read_release_version(plugin_dir)
+    runtime_manifest = plugin_dir / "runtime-manifest.json"
+    if not runtime_manifest.is_file():
+        raise SystemExit(f"packaged runtime manifest is missing: {runtime_manifest}")
+    evidence = {
+        "schemaVersion": 1,
+        "packageHashFormat": "sha256-u64be-path-content-v1",
+        "pluginVersion": version,
+        "sourceCommit": source_commit,
+        "packageSha256": package_tree_sha256(marketplace_dir),
+        "runtimeManifestSha256": sha256(runtime_manifest),
+        "versionBumped": False,
+        "published": False,
+        "tag": None,
+    }
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(evidence, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def package_local_debug(
@@ -736,9 +856,15 @@ def main() -> None:
     parser.add_argument("--release-tag")
     parser.add_argument("--source-commit")
     parser.add_argument("--local-debug-target")
-    parser.add_argument("--local-debug-host", default="codex", choices=sorted(HOST_MANIFEST_DIRS))
+    parser.add_argument(
+        "--local-debug-host", default="codex", choices=sorted(HOST_MANIFEST_DIRS)
+    )
     parser.add_argument("--tools-root", type=Path)
-    parser.add_argument("--lock-file", type=Path, default=Path("plugins/unica/third-party/tools.lock.json"))
+    parser.add_argument(
+        "--lock-file",
+        type=Path,
+        default=Path("plugins/unica/third-party/tools.lock.json"),
+    )
     parser.add_argument("--marketplace-name", default="unica-dev")
     parser.add_argument("--core-release-repository", default=SOURCE_REPOSITORY)
     parser.add_argument("--out-dir", type=Path, required=True)
@@ -748,7 +874,11 @@ def main() -> None:
     if args.local_debug_target:
         if args.tools_root is None:
             raise SystemExit("--tools-root is required with --local-debug-target")
-        lock_file = args.lock_file if args.lock_file.is_absolute() else repo_root / args.lock_file
+        lock_file = (
+            args.lock_file
+            if args.lock_file.is_absolute()
+            else repo_root / args.lock_file
+        )
         package_local_debug(
             repo_root=repo_root,
             tools_root=args.tools_root.resolve(),
@@ -780,7 +910,9 @@ def main() -> None:
         raise SystemExit(f"marketplace source not found: {marketplace_src}")
 
     version = read_release_version(plugin_src)
-    metadata = load_runtime_metadata(args.runtime_metadata_root.resolve(), plugin_version=version)
+    metadata = load_runtime_metadata(
+        args.runtime_metadata_root.resolve(), plugin_version=version
+    )
     bootstrap_root = args.bootstrap_root.resolve()
 
     marketplace_dir = args.out_dir / "marketplace"
@@ -814,8 +946,12 @@ def main() -> None:
         source=claude_plugin_source(release_tag=args.release_tag),
     )
 
-    json.loads((plugin_dst / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-    json.loads((plugin_dst / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    json.loads(
+        (plugin_dst / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+    json.loads(
+        (plugin_dst / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
     json.loads((plugin_dst / ".mcp.json").read_text(encoding="utf-8"))
     json.loads((plugin_dst / "runtime-manifest.json").read_text(encoding="utf-8"))
     json.loads((marketplace_dst / "marketplace.json").read_text(encoding="utf-8"))
@@ -823,6 +959,11 @@ def main() -> None:
     assert_archive_clean(marketplace_dir)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    write_p0_package_evidence(
+        marketplace_dir,
+        args.out_dir / "p0-package-evidence.json",
+        source_commit=args.source_commit,
+    )
 
 
 if __name__ == "__main__":

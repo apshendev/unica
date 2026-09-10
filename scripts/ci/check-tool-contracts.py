@@ -232,7 +232,7 @@ def validate_v8_runner_failed_partial_receipt(
 def check_v8_runner_partial_load_contract(runner: Path, target: str) -> list[str]:
     label = "v8-runner partial-load contract"
     if not runner.is_file():
-        return [f"{label}: binary not found: {runner}"]
+        return [f"{label}: binary not found: {runner.as_posix()}"]
 
     with tempfile.TemporaryDirectory(prefix="unica-v8-runner-179-") as directory:
         root = Path(directory)
@@ -621,7 +621,7 @@ def check_v8_runner_bounded_external_epf_contract(
 ) -> list[str]:
     label = "v8-runner bounded external EPF contract"
     if not runner.is_file():
-        return [f"{label}: binary not found: {runner}"]
+        return [f"{label}: binary not found: {runner.as_posix()}"]
 
     with tempfile.TemporaryDirectory(prefix="unica-v8-runner-110-") as directory:
         root = Path(directory)
@@ -764,7 +764,7 @@ def check_v8_runner_windows_external_publication_contract(
     if target != "win-x64":
         return []
     if not runner.is_file():
-        return [f"{label}: binary not found: {runner}"]
+        return [f"{label}: binary not found: {runner.as_posix()}"]
 
     with tempfile.TemporaryDirectory(prefix="unica-v8-runner-310-") as directory:
         root = Path(directory)
