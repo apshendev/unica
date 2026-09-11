@@ -246,12 +246,63 @@ def assemble_local_debug_staging(
             raise SystemExit(f"candidate staging contains {forbidden}")
 
 
+def load_overlay_applier():
+    path = Path(__file__).resolve().parents[1] / "fork" / "apply_overlay.py"
+    if not path.is_file():
+        raise SystemExit(f"fork overlay applier not found: {path}")
+    spec = importlib.util.spec_from_file_location("unica_fork_overlay", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def apply_fork_overlay(staging: Path, overlay_path: Path) -> None:
+    """Применить форк-оверлей к staged-копии; см. fork/OVERLAY.md."""
+    applier = load_overlay_applier()
+    report, ok = applier.apply_overlay(staging, overlay_path, dry_run=False)
+    for entry in report:
+        status = "ok  " if entry["ok"] else "FAIL"
+        note = f"  [{entry['note']}]" if entry.get("note") else ""
+        print(
+            f"fork-overlay {status} {entry['id']}: "
+            f"files={entry['files']} matches={entry['matches']}{note}"
+        )
+    if not ok:
+        raise SystemExit(
+            "fork overlay failed: anchor drift after upstream sync — "
+            "обнови regex в fork/overlay.json (см. fork/OVERLAY.md)"
+        )
+    print("fork-overlay: all rules satisfied")
+
+
+def resolve_overlay_path(args, repo_root: Path):
+    if args.no_fork_overlay:
+        return None
+    if args.fork_overlay is not None:
+        return args.fork_overlay
+    default = repo_root / "fork" / "overlay.json"
+    return default if default.is_file() else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--thin-root", type=Path)
     parser.add_argument("--local-debug-root", type=Path)
     parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument(
+        "--fork-overlay",
+        type=Path,
+        default=None,
+        help="путь к форк-оверлею (умолчание: <repo>/fork/overlay.json, если существует)",
+    )
+    parser.add_argument(
+        "--no-fork-overlay",
+        action="store_true",
+        help="не применять форк-оверлей к упаковке",
+    )
     args = parser.parse_args()
 
     if (args.thin_root is None) == (args.local_debug_root is None):
@@ -278,6 +329,11 @@ def main() -> None:
             "version"
         ]
         write_local_debug_marker(staging, target, version)
+        overlay_path = resolve_overlay_path(args, repo_root)
+        if overlay_path is not None:
+            apply_fork_overlay(staging, overlay_path)
+        elif args.fork_overlay is not None:
+            raise SystemExit(f"fork overlay not found: {args.fork_overlay}")
         thin_module.assert_archive_clean(staging)
 
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -308,6 +364,11 @@ def main() -> None:
     out_dir = args.out_dir.resolve()
     staging = out_dir / "staging"
     assemble_staging(thin_root, repo_root, staging, thin_module)
+    overlay_path = resolve_overlay_path(args, repo_root)
+    if overlay_path is not None:
+        apply_fork_overlay(staging, overlay_path)
+    elif args.fork_overlay is not None:
+        raise SystemExit(f"fork overlay not found: {args.fork_overlay}")
     thin_module.assert_archive_clean(staging)
 
     out_dir.mkdir(parents=True, exist_ok=True)

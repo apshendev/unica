@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "file:///C:/Users/inilu/.local/share/opencode/packages/unica-opencode/installs/0.12.0-win-x64-9af2bd7856ce/node_modules/@apshendev/unica-opencode"
+    "file:///D:/orca/unica/.build/opencode-local/consumer/node_modules/@apshendev/unica-opencode"
   ]
 }

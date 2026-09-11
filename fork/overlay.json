@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "description": "Форк-оверлей плагина unica: маршрутизация runtime-операций на MCP vrunner, тестирование на глобальные скиллы yaxunit-testing/vanessa-testing, снятие запрета прямых вызовов, удаление скилла test-authoring. Применяется к staged-копии упаковки; git-дерево не расходится с upstream. Снимок счётчиков — fork/OVERLAY.md.",
+  "rules": [
+    {
+      "id": "delete-test-authoring",
+      "action": "delete_path",
+      "path": "skills/test-authoring",
+      "note": "пересечение с глобальными скиллами yaxunit-testing/vanessa-testing"
+    },
+    {
+      "id": "replace-runtime-contract-vrunner",
+      "files": ["skills/*/SKILL.md"],
+      "action": "replace",
+      "match": "^- По INV-MCP-RUNTIME-RECEIPT и ADR-0074: `unica\\.runtime\\.execute`.*?\\n`unica\\.build\\.\\*`\\.$",
+      "replacement": "- Runtime-операции выполняются инструментами MCP `vrunner` (приоритет):\n  проверка — `vrunner_validate_syntax_check` (конфигуратор) и `vrunner_validate_edt`\n  (EDT); инициализация ИБ — `vrunner_infobase_init`; сборка и загрузка\n  исходников — `vrunner_cf_load` / `vrunner_cfe_load`; выгрузка конфигурации и\n  расширений — `vrunner_cf_unload` / `vrunner_cfe_unload`; разбор в исходники —\n  `vrunner_cf_decompile` / `vrunner_cfe_decompile`; конвертация форматов —\n  `vrunner_cf_convert` / `vrunner_cfe_convert`; DT — `vrunner_infobase_dump_dt`\n  / `vrunner_infobase_restore_dt`; расширения в ИБ — `vrunner_extensions_list`\n  / `vrunner_extensions_check` / `vrunner_extensions_set_options`; EPF/ERF —\n  `vrunner_epf_compile`; фоновые запуски — параметр background плюс\n  `vrunner_task_status` / `vrunner_task_result` / `vrunner_task_cancel`.\n- Тестирование — глобальные скиллы `yaxunit-testing` (юнит-тесты YAxUnit) и\n  `vanessa-testing` (сценарии Vanessa Automation); их контур сам прогоняет\n  тесты.\n- Запуск интерактивного клиента vrunner не покрывает — вручную или скриптами\n  проекта.",
+      "minMatches": 28
+    },
+    {
+      "id": "remove-do-not-call-single-line",
+      "files": ["skills/*/SKILL.md"],
+      "action": "remove_lines",
+      "match": "^- Do not call internal .*adapters directly\\.( They are hidden behind (MCP )?`unica`( and synchronized by the orchestrator)?\\.)?$",
+      "minMatches": 33
+    },
+    {
+      "id": "remove-do-not-call-wrapped",
+      "files": ["skills/*/SKILL.md"],
+      "action": "remove_block",
+      "match": "^- Do not call internal MCP/CLI adapters directly\\. They are hidden behind\\n\\s*`unica` and synchronized by the orchestrator\\.\\n",
+      "minMatches": 6
+    },
+    {
+      "id": "remove-execution-path-scripts",
+      "files": ["skills/*/SKILL.md"],
+      "action": "remove_lines",
+      "match": "^- Execution path: .*skill-local operation scripts are not part of the workflow\\.$",
+      "minMatches": 11
+    },
+    {
+      "id": "remove-epf-erf-init-ban",
+      "files": ["skills/*/SKILL.md"],
+      "action": "remove_lines",
+      "match": "^- Не вызывать внутренние adapters и не добавлять skill-local scripts\\.$",
+      "minMatches": 2
+    },
+    {
+      "id": "remove-meta-info-ban",
+      "files": ["skills/*/SKILL.md"],
+      "action": "remove_lines",
+      "match": "^- Не вызывайте внутренние MCP/CLI-адаптеры и skill-local scripts\\.$",
+      "minMatches": 1
+    },
+    {
+      "id": "replace-cfe-diff-bullet",
+      "files": ["skills/cfe-diff/SKILL.md"],
+      "action": "replace",
+      "match": "^- Не вызывай внутренние MCP/CLI-адаптеры и (не подменяй набор исходников путём к\\n  каталогу выгрузки\\.)",
+      "replacement": "- \\1",
+      "minMatches": 1
+    },
+    {
+      "id": "replace-source-access-bullet",
+      "files": ["skills/source-access/SKILL.md"],
+      "action": "replace",
+      "match": "^- Не вызывай внутренние MCP/CLI-адаптеры и (не подменяй логическую цель\\n  физическим путём\\.)",
+      "replacement": "- \\1",
+      "minMatches": 1
+    },
+    {
+      "id": "remove-code-search-hidden-index",
+      "files": ["skills/code-search/SKILL.md"],
+      "action": "remove_block",
+      "match": "^- Не зови индекс кода, анализатор или пакетные адаптеры напрямую: они спрятаны\\n  за MCP `unica`\\.\\n",
+      "minMatches": 1
+    },
+    {
+      "id": "replace-code-search-mcp-first",
+      "files": ["skills/code-search/SKILL.md"],
+      "action": "replace",
+      "match": "^- MCP-first discipline: держись публичных `unica\\.\\*` до того, как спускаться к\\n  оболочке\\. К поиску по файлам переходи, только когда вызовы выше не закрыли\\n  пробел, и сообщай what was tried, если это важно для ответа\\.",
+      "replacement": "- Сначала публичные `unica.*` (search/view/check); к поиску по файлам и\n  оболочке переходи, когда вызовы выше не закрыли пробел, и сообщай what was\n  tried, если это важно для ответа.",
+      "minMatches": 1
+    },
+    {
+      "id": "replace-code-diagnostics-v8std",
+      "files": ["skills/code-diagnostics/SKILL.md"],
+      "action": "replace",
+      "match": "^- Стандарт v8std спрашивается только через `unica\\.docs` с\\n  `source: \"development-standard\"`\\. Не зови анализатор, стандарты или пакетные\\n  адаптеры напрямую\\.",
+      "replacement": "- Стандарт v8std спрашивается через `unica.docs` с\n  `source: \"development-standard\"`.",
+      "minMatches": 1
+    },
+    {
+      "id": "remove-xdto-donor-ban",
+      "files": ["skills/xdto/SKILL.md"],
+      "action": "remove_block",
+      "match": "^- Не вызывай donor-команды compile, decompile или validate и не запускай их\\n  скриптовые обёртки: публичная граница этого скилла состоит ровно из двух\\n  нативных инструментов выше\\.\\n",
+      "minMatches": 1
+    },
+    {
+      "id": "replace-db-auth-check-step5",
+      "files": ["skills/db-auth-check/SKILL.md"],
+      "action": "replace",
+      "match": "^5\\. Не вызывай applied `unica\\.runtime\\.execute`, `unica\\.build\\.\\*`, `unica\\.runtime\\.job\\.\\*` или прямой runner ради auth-check\\.$",
+      "replacement": "5. Не проверяй credentials запуском applied runtime или прямого runner ради auth-check.",
+      "minMatches": 1
+    },
+    {
+      "id": "replace-api-design-tests-clause",
+      "files": ["skills/api-design/SKILL.md"],
+      "action": "replace",
+      "match": "^- Use `test-authoring` for unit tests that model API consumer scenarios; use `integration-implement` only when the task is about HTTP/REST/SOAP/gRPC transport implementation\\.",
+      "replacement": "- Use `integration-implement` only when the task is about HTTP/REST/SOAP/gRPC transport implementation.",
+      "minMatches": 1
+    },
+    {
+      "id": "replace-epf-bsp-init-gap-clause",
+      "files": ["skills/epf-bsp-init/SKILL.md"],
+      "action": "replace",
+      "match": "сообщи о runtime contract gap и не обходи его прямым runner-ом, `unica\\.build\\.\\*` или `unica\\.runtime\\.job\\.\\*`",
+      "replacement": "сообщи о runtime contract gap",
+      "minMatches": 1
+    },
+    {
+      "id": "replace-epf-bsp-init-run-dictionary",
+      "files": ["skills/epf-bsp-init/SKILL.md"],
+      "action": "replace",
+      "match": "^- Для runtime-сборки сначала запросить словарь `unica\\.run \\{\\}` и использовать\\n  `artifact\\.build` только когда операция помечена `implemented: true`; не\\n  угадывать аргументы при `argsSchema: null` и не считать preview собранным `\\.epf`\\.",
+      "replacement": "- Runtime-сборка EPF — `vrunner_epf_compile` (исходники → `.epf`); preview\n  собранным артефактом не считается.",
+      "minMatches": 1
+    },
+    {
+      "id": "replace-form-compile-artifact-build",
+      "files": ["skills/form-compile/SKILL.md"],
+      "action": "replace",
+      "match": "; runtime-публикацию сначала обнаруживать через `unica\\.run \\{\\}`.*?`argsSchema: null`",
+      "replacement": "; runtime-публикация — `vrunner_epf_compile`",
+      "minMatches": 1
+    },
+    {
+      "id": "strip-preferred-path-runtime-token",
+      "files": ["skills/*/SKILL.md"],
+      "action": "replace",
+      "match": ", (?:and )?`unica\\.runtime\\.execute`",
+      "replacement": "",
+      "minMatches": 20
+    },
+    {
+      "id": "reroute-runtime-execute-token",
+      "files": ["skills/*/SKILL.md"],
+      "action": "replace",
+      "match": "`unica\\.runtime\\.execute[^`\\n]*`",
+      "replacement": "`vrunner`",
+      "minMatches": 26
+    },
+    {
+      "id": "reroute-runtime-execute-bare",
+      "files": ["skills/*/SKILL.md"],
+      "action": "replace",
+      "match": "(?<![`\\w])unica\\.runtime\\.execute(?![`\\w])",
+      "replacement": "vrunner",
+      "minMatches": 3
+    }
+  ]
+}
